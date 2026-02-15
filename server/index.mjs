@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 
+import { createCallOutputModule } from './call_output/index.mjs';
 import { createFryAutomationModule } from './fry_automation/index.mjs';
 import { createOrdersRouter } from './routes/orders.mjs';
 
@@ -241,6 +242,10 @@ const fryAutomation = createFryAutomationModule({
 });
 fryAutomation.start().catch((error) => {
   console.error('[fry-automation] failed to start background polling', error);
+});
+
+const callOutput = createCallOutputModule({
+  historyLimit: Number(process.env.CALL_OUTPUT_HISTORY_LIMIT ?? 500),
 });
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -971,6 +976,7 @@ app.get('/api/admin/workflow-reset-state', authMiddleware, (req, res) => {
 });
 
 app.use('/api/fry', fryAutomation.router);
+app.use('/api/call-output', callOutput.router);
 app.use('/api/orders', createOrdersRouter());
 
 if (fs.existsSync(DIST_INDEX_PATH)) {
@@ -982,6 +988,10 @@ if (fs.existsSync(DIST_INDEX_PATH)) {
 app.use((err, _req, res, _next) => {
   if (String(err?.message ?? '').includes('Origin not allowed by CORS')) {
     res.status(403).json({ error: '目前來源未被允許，請聯繫管理員設定 CORS_ORIGINS' });
+    return;
+  }
+  if (err?.type === 'entity.parse.failed') {
+    res.status(400).json({ error: 'JSON 格式錯誤' });
     return;
   }
   console.error('[API ERROR]', err);

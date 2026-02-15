@@ -22,10 +22,63 @@ export const createFryAutomationRouter = ({ service }) => {
         ? await service.refresh('status_api')
         : service.getLatestStatus();
 
+      const recommendations = Array.isArray(status?.sensors)
+        ? status.sensors.map((sensor) => ({
+            sensor_id: sensor.id,
+            label: sensor.label,
+            source: sensor.source ?? 'unknown',
+            recommendation: sensor.controlRecommendation ?? null,
+            alarm: sensor.alarm ?? null,
+            updated_at: sensor.updatedAt,
+          }))
+        : [];
+
       res.json({
         ok: true,
         source: status.provider,
         status,
+        recommendations,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/sensors/temperature', async (req, res, next) => {
+    try {
+      const payload = req.body ?? {};
+      const status = await service.ingestTemperatureReading(payload);
+      res.status(200).json({
+        ok: true,
+        status,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/sensors/temperature/batch', async (req, res, next) => {
+    try {
+      const body = req.body ?? {};
+      const readings = Array.isArray(body.readings) ? body.readings : [];
+      const result = await service.ingestTemperatureBatch(readings);
+      res.status(200).json({
+        ok: true,
+        accepted: result.accepted,
+        status: result.status,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/sensors/target', async (req, res, next) => {
+    try {
+      const result = await service.setTargetTemperature(req.body ?? {});
+      res.status(200).json({
+        ok: true,
+        result: result.result,
+        status: result.status,
       });
     } catch (error) {
       next(error);

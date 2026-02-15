@@ -107,6 +107,18 @@ npm run dev:full
   - 店家專屬進單 URL（推薦給外部系統）
   - 由 URL 綁定店家，不需再在 body 帶 `store_id`
   - 可直接傳入髒資料文字，供 parser/LLM fallback 流程處理
+- `GET /api/orders/legacy-pull/status`
+  - 讀取 legacy 抓單橋接器狀態（輪詢、最後抓取、錯誤）
+- `PUT /api/orders/legacy-pull/config`
+  - 更新 legacy 抓單配置（`endpoint/store_id/poll_interval_ms/request_timeout_ms/enabled`）
+- `POST /api/orders/legacy-pull/pull-now`
+  - 立即抓一次 legacy payload 並導入 ingest pipeline
+  - 可帶 `raw_payload` 直接測 parser（不打外網）
+  - 可帶 `dry_run=true` 只解析不進單
+- `POST /api/orders/legacy-pull/preview-parse`
+  - 僅解析 `raw_payload` 並回傳分單結果（不抓遠端、不進單）
+- `POST /api/orders/legacy-pull/start` / `POST /api/orders/legacy-pull/stop`
+  - 啟停自動輪詢
 - `GET /api/orders/review`
   - 讀取審核佇列（含前端相容欄位 `pendingReview` / `tracking`）
 - `GET /api/orders/review/details`
@@ -150,6 +162,45 @@ npm run dev:full
 - `server/data/pos_pipeline/stores/<store_id>/menu_catalog.json`
 - `server/data/pos_pipeline/stores/<store_id>/allowed_mods.json`
 
+## API（煎台自動化）
+
+- `GET /api/fry/sensors/status`
+  - 讀取目前煎台感測狀態與控制建議（`recommendations`）
+- `POST /api/fry/sensors/temperature`
+  - 上報單筆溫度
+  - body 範例：
+    ```json
+    {
+      "sensor_id": "fryer-left",
+      "temperature_c": 178.3,
+      "target_temperature_c": 180,
+      "source": "esp32-left"
+    }
+    ```
+- `POST /api/fry/sensors/temperature/batch`
+  - 批次上報溫度（`readings` 陣列）
+- `POST /api/fry/sensors/target`
+  - 更新某煎台目標溫度
+- `GET /api/fry/events/stream`
+  - SSE 事件流（狀態更新、上報事件、告警）
+
+## API（叫號輸出模組）
+
+- `GET /api/call-output/status`
+  - 叫號模組佇列摘要
+- `POST /api/call-output/enqueue`
+  - 加入叫號佇列（可單筆或 `calls` 陣列）
+- `POST /api/call-output/next`
+  - 取下一筆叫號（會回傳 `voice_script`）
+- `POST /api/call-output/ack`
+  - 回寫叫號完成/拒絕
+- `GET /api/call-output/queue`
+  - 查詢目前佇列
+- `GET /api/call-output/history`
+  - 查詢事件歷史
+- `GET /api/call-output/voice-script/:number`
+  - 取得 legacy 相容語音 token（`start.wav` + 千百十個位）
+
 ## 前端補充
 
 - 進單引擎已獨立成第 5 視角（`進單引擎`）：
@@ -178,6 +229,48 @@ npm run dev:full
 - `POS_LLM_TIMEOUT_S`：Python LLM 呼叫 timeout 秒數（預設 `15`）
 - `POS_LLM_BASE_URL`：預設 `https://api.openai.com/v1`
 - `OPENAI_API_KEY` 或 `POS_LLM_API_KEY`：OpenAI key
+- `LEGACY_POS_PULL_ENABLED`：`1/0`，是否啟動 legacy 自動抓單輪詢
+- `LEGACY_POS_PULL_ENDPOINT`：legacy 公司系統抓單 URL
+- `LEGACY_POS_PULL_STORE_ID`：抓到的單導入哪家店（預設 `default`）
+- `LEGACY_POS_PULL_INTERVAL_MS`：輪詢間隔（ms）
+- `LEGACY_POS_PULL_TIMEOUT_MS`：抓單 timeout（ms）
+- `LEGACY_POS_PULL_MAX_ORDERS`：單次最多導入幾單
+- `LEGACY_POS_PULL_DEDUPE_MS`：去重視窗（ms）
+- `CALL_OUTPUT_HISTORY_LIMIT`：叫號事件歷史上限
+
+## Legacy 對接 Runbook（公司 POS 抓單）
+
+1. 設定 bridge（先不要啟用）
+```bash
+curl -sS -X PUT http://127.0.0.1:8787/api/orders/legacy-pull/config \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "enabled": false,
+    "endpoint": "https://<legacy-host>/kds/fired/find_real_order.php?device=1&mode=1",
+    "store_id": "store-songren",
+    "poll_interval_ms": 8000,
+    "request_timeout_ms": 6000
+  }'
+```
+
+2. 先用 `dry_run` 驗證（只抓取解析，不進單）
+```bash
+curl -sS -X POST http://127.0.0.1:8787/api/orders/legacy-pull/pull-now \
+  -H 'Content-Type: application/json' \
+  -d '{"dry_run":true}'
+```
+
+3. 確認 `preview_count` 與 `preview_orders[].source_text` 正確後，再正式導入
+```bash
+curl -sS -X POST http://127.0.0.1:8787/api/orders/legacy-pull/pull-now \
+  -H 'Content-Type: application/json' \
+  -d '{"reason":"manual_import"}'
+```
+
+4. 最後才啟用自動輪詢
+```bash
+curl -sS -X POST http://127.0.0.1:8787/api/orders/legacy-pull/start
+```
 
 ## 建置
 

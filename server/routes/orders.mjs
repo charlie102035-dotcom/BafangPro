@@ -17,6 +17,7 @@ import {
   validateIngestRequest,
   validateReviewRequest,
 } from '../services/pos_pipeline/schema.mjs';
+import { createLegacyPosPullService } from '../services/legacy_bridge/order_pull_service.mjs';
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const normalizeText = (value, fallback = '') => {
@@ -165,11 +166,25 @@ const createServices = () => {
   const storeConfigService = createStoreConfigService();
   const reviewService = createReviewService({ auditStore });
   const ingestService = createIngestService({ reviewService, auditStore, storeConfigService });
+  const legacyPullService = createLegacyPosPullService({
+    ingestService,
+    config: {
+      enabled: toBool(process.env.LEGACY_POS_PULL_ENABLED, false),
+      endpoint: normalizeText(process.env.LEGACY_POS_PULL_ENDPOINT),
+      store_id: normalizeText(process.env.LEGACY_POS_PULL_STORE_ID, 'default'),
+      poll_interval_ms: toPositiveInt(process.env.LEGACY_POS_PULL_INTERVAL_MS, 8000),
+      request_timeout_ms: toPositiveInt(process.env.LEGACY_POS_PULL_TIMEOUT_MS, 6000),
+      max_orders_per_pull: toPositiveInt(process.env.LEGACY_POS_PULL_MAX_ORDERS, 20),
+      dedupe_window_ms: toPositiveInt(process.env.LEGACY_POS_PULL_DEDUPE_MS, 1000 * 60 * 120),
+    },
+  });
+  legacyPullService.start();
   return {
     auditStore,
     storeConfigService,
     reviewService,
     ingestService,
+    legacyPullService,
   };
 };
 
@@ -216,6 +231,100 @@ export function createOrdersRouter() {
   router.post('/stores/:storeId/ingest-pos-text', async (req, res) => {
     const storeId = normalizeText(req.params?.storeId, 'default');
     await handleIngestPosText(req, res, storeId);
+  });
+
+  router.get('/legacy-pull/status', (req, res) => {
+    try {
+      res.status(200).json({
+        ok: true,
+        status: services.legacyPullService.getStatus(),
+      });
+    } catch (error) {
+      console.error('[orders.legacy-pull.status] error', error);
+      res.status(500).json({ error: 'failed to load legacy pull status' });
+    }
+  });
+
+  router.put('/legacy-pull/config', (req, res) => {
+    try {
+      const body = isObject(req.body) ? req.body : {};
+      const config = services.legacyPullService.updateConfig(body);
+      res.status(200).json({
+        ok: true,
+        config,
+      });
+    } catch (error) {
+      const message = normalizeText(error?.message, 'failed to update legacy pull config');
+      res.status(400).json({ error: message });
+    }
+  });
+
+  router.post('/legacy-pull/start', (req, res) => {
+    try {
+      services.legacyPullService.updateConfig({ enabled: true });
+      services.legacyPullService.start();
+      res.status(200).json({
+        ok: true,
+        status: services.legacyPullService.getStatus(),
+      });
+    } catch (error) {
+      console.error('[orders.legacy-pull.start] error', error);
+      res.status(500).json({ error: 'failed to start legacy pull service' });
+    }
+  });
+
+  router.post('/legacy-pull/stop', (req, res) => {
+    try {
+      services.legacyPullService.updateConfig({ enabled: false });
+      services.legacyPullService.stop();
+      res.status(200).json({
+        ok: true,
+        status: services.legacyPullService.getStatus(),
+      });
+    } catch (error) {
+      console.error('[orders.legacy-pull.stop] error', error);
+      res.status(500).json({ error: 'failed to stop legacy pull service' });
+    }
+  });
+
+  router.post('/legacy-pull/pull-now', async (req, res) => {
+    try {
+      const body = isObject(req.body) ? req.body : {};
+      const dryRun = toBool(body.dry_run ?? body.dryRun, false);
+      const result = await services.legacyPullService.pullNow({
+        reason: dryRun ? 'dry_run' : normalizeText(body.reason, 'manual'),
+        raw_payload: typeof body.raw_payload === 'string' ? body.raw_payload : null,
+      });
+      res.status(200).json({
+        ok: true,
+        dry_run: dryRun,
+        result,
+      });
+    } catch (error) {
+      const message = normalizeText(error?.message, 'legacy pull failed');
+      res.status(400).json({ error: message });
+    }
+  });
+
+  router.post('/legacy-pull/preview-parse', (req, res) => {
+    try {
+      const body = isObject(req.body) ? req.body : {};
+      const rawPayload = typeof body.raw_payload === 'string' ? body.raw_payload : '';
+      if (!rawPayload.trim()) {
+        res.status(400).json({ error: 'raw_payload is required' });
+        return;
+      }
+      const result = services.legacyPullService.previewParse({
+        raw_payload: rawPayload,
+      });
+      res.status(200).json({
+        ok: true,
+        result,
+      });
+    } catch (error) {
+      const message = normalizeText(error?.message, 'legacy preview failed');
+      res.status(400).json({ error: message });
+    }
   });
 
   router.get('/review', (req, res) => {
