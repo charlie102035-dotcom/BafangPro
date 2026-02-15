@@ -1,7 +1,0 @@
-{
-  "provider": "openai",
-  "model": "gpt-4o-mini",
-  "timeout_s": 15,
-  "enabled": null,
-  "api_key": ""
-}

@@ -17,7 +17,7 @@ server/data/*.db
 server/data/*.db-*
 server/data/pos_pipeline/audit.log.jsonl
 server/data/pos_pipeline/review_store.json
-server/data/pos_pipeline/stores/store-*/llm_config.json
+server/data/pos_pipeline/stores/*/llm_config.json
 .env
 .env.*
 
