@@ -74,7 +74,23 @@ git checkout "$BRANCH"
 git pull --ff-only origin "$BRANCH"
 
 if [[ ! -f ".env" ]]; then
-  cp .env.production.example .env
+  if [[ -f ".env.production.example" ]]; then
+    cp .env.production.example .env
+  elif [[ -f ".env.example" ]]; then
+    cp .env.example .env
+  else
+    cat > .env <<'EOF'
+DOMAIN=your.domain.com
+EMAIL=ops@your.domain.com
+AUTH_JWT_SECRET=replace_with_long_random_secret
+ADMIN_PASSWORD=0000
+OPENAI_API_KEY=
+POS_LLM_API_KEY=
+POS_LLM_MODEL=gpt-4o-mini
+POS_LLM_TIMEOUT_S=15
+POS_LLM_BASE_URL=https://api.openai.com/v1
+EOF
+  fi
 fi
 
 upsert_env ".env" "DOMAIN" "$DOMAIN"
