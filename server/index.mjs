@@ -14,7 +14,7 @@ import { createOrdersRouter } from './routes/orders.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const API_PORT = Number(process.env.API_PORT ?? 8787);
+const API_PORT = Number(process.env.API_PORT ?? process.env.PORT ?? 8787);
 const AUTH_COOKIE_NAME = 'bafang_auth';
 const ADMIN_COOKIE_NAME = 'bafang_admin';
 const JWT_EXPIRES_IN = '14d';

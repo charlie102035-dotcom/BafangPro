@@ -283,6 +283,22 @@ bash deploy/deploy.sh
 - `git pull`
 - `docker compose up -d --build`
 
+## Render 部署（改用 Render 推薦走這段）
+
+本專案已提供 `/render.yaml`，可直接 Blueprint 部署。
+
+1. 到 Render Dashboard 選 `New +` -> `Blueprint`  
+2. 連接 GitHub repo：`charlie102035-dotcom/BafangPro`  
+3. 套用 `render.yaml` 後，填入這些 secret：
+   - `AUTH_JWT_SECRET`
+   - `OPENAI_API_KEY` 或 `POS_LLM_API_KEY`（要用 AI 才填）
+4. 部署完成後，將 `CORS_ORIGINS` 改成你的實際 Render 網址（若服務名非 `bafang-pro`）：
+   - 例如：`https://<your-service>.onrender.com`
+
+注意：
+- 目前 `render.yaml` 使用 `plan: starter`，因為有掛載 persistent disk（SQLite 與店面設定會保存）。  
+- 如果改成 free，通常無法使用 persistent disk，資料可能在重啟後遺失。  
+
 不需要再手動上傳 zip、解壓、重部署。
 
 [deploy check 2026年 2月15日 星期日 10時52分28秒 CST]

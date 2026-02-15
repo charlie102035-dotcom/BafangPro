@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: bafang-pro
+    runtime: docker
+    plan: starter
+    branch: main
+    autoDeploy: true
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    disk:
+      name: bafang-data
+      mountPath: /app/server/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PORT
+        value: "10000"
+      - key: AUTH_DB_PATH
+        value: /app/server/data/auth.db
+      - key: CORS_ORIGINS
+        value: https://bafang-pro.onrender.com
+      - key: AUTH_JWT_SECRET
+        sync: false
+      - key: ADMIN_PASSWORD
+        value: "0000"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: POS_LLM_API_KEY
+        sync: false
+      - key: POS_LLM_MODEL
+        value: gpt-4o-mini
+      - key: POS_LLM_TIMEOUT_S
+        value: "15"
+      - key: POS_LLM_BASE_URL
+        value: https://api.openai.com/v1
