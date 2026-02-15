@@ -10,6 +10,25 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate required secrets
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_HOST" ]; then
+            echo "Missing secret: VPS_HOST"
+            exit 1
+          fi
+          if [ -z "$VPS_USER" ]; then
+            echo "Missing secret: VPS_USER"
+            exit 1
+          fi
+          if [ -z "$VPS_SSH_KEY" ]; then
+            echo "Missing secret: VPS_SSH_KEY"
+            exit 1
+          fi
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -18,12 +37,9 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           script_stop: true
+          command_timeout: 30m
           script: |
-            export APP_DIR="${{ secrets.VPS_APP_DIR }}"
+            export APP_DIR="${{ secrets.VPS_APP_DIR || '/opt/bafang-box-order' }}"
             export BRANCH="main"
-            if [ -z "$APP_DIR" ]; then
-              echo "VPS_APP_DIR secret is required"
-              exit 1
-            fi
             cd "$APP_DIR"
             bash deploy/deploy.sh
