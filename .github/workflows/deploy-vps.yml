@@ -1,0 +1,29 @@
+name: Deploy VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          script: |
+            export APP_DIR="${{ secrets.VPS_APP_DIR }}"
+            export BRANCH="main"
+            if [ -z "$APP_DIR" ]; then
+              echo "VPS_APP_DIR secret is required"
+              exit 1
+            fi
+            cd "$APP_DIR"
+            bash deploy/deploy.sh

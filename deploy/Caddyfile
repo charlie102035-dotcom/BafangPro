@@ -1,0 +1,15 @@
+{$DOMAIN} {
+  encode gzip zstd
+
+  @api path /api/*
+  reverse_proxy @api app:8787
+
+  reverse_proxy app:8787
+
+  log {
+    output stdout
+    format console
+  }
+
+  tls {$EMAIL}
+}

@@ -1,0 +1,16 @@
+.git
+.github
+.vscode
+.idea
+node_modules
+dist
+release
+backups
+coordination
+*.log
+.env
+.env.*
+server/data/*.db
+server/data/*.db-*
+__pycache__
+*.pyc

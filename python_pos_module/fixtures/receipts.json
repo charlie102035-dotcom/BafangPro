@@ -1,0 +1,62 @@
+[
+  {
+    "order_id": "RCP-001",
+    "scenario": "name_variation",
+    "source_text": "咖哩雞肉鍋貼 x2\n咖哩鍋貼 x1\n酸辣湯 x1",
+    "expected_highlight": "咖哩雞肉鍋貼 vs 咖哩鍋貼"
+  },
+  {
+    "order_id": "RCP-002",
+    "scenario": "single_line_note",
+    "source_text": "招牌鍋貼 x3 備註:加辣\n韭菜鍋貼 x2 備註:去醬",
+    "expected_mods": ["加辣", "去醬"]
+  },
+  {
+    "order_id": "RCP-003",
+    "scenario": "cross_line_pack_together",
+    "source_text": "招牌鍋貼 x5\n韭菜鍋貼 x10\n備註:5 招牌 + 10 韭菜同袋",
+    "expected_grouping_hint": "5 招牌 + 10 韭菜同袋"
+  },
+  {
+    "order_id": "RCP-004",
+    "scenario": "reference_phrase",
+    "source_text": "招牌鍋貼 x2\n酸辣湯 x1\n豆漿 x1 備註:上面兩項同袋",
+    "expected_grouping_hint": "上面兩項同袋"
+  },
+  {
+    "order_id": "RCP-005",
+    "scenario": "ambiguous_need_manual_review",
+    "source_text": "咖哩鍋貼 x2\n神秘特調 x1 備註:照舊",
+    "requires_manual_review": true,
+    "review_reason": "品項或備註語意不明確",
+    "manual_fix_example": {
+      "before": {
+        "item_id": null,
+        "mods": []
+      },
+      "after": {
+        "item_id": "I003",
+        "mods": [
+          "加辣"
+        ]
+      },
+      "operator": "shift_lead_a",
+      "timestamp": "2026-02-14T16:00:00+08:00"
+    }
+  },
+  {
+    "order_id": "RCP-006",
+    "scenario": "llm_timeout_fallback",
+    "source_text": "招牌鍋貼 x2\n酸辣湯 x1\n備註:同袋",
+    "simulate": {
+      "llm_timeout": true,
+      "fallback": "rule_based_first_candidate"
+    },
+    "expected_audit_stages": [
+      "raw_ingest",
+      "candidate_generation",
+      "llm_timeout_fallback",
+      "merge_validate"
+    ]
+  }
+]

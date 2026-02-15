@@ -1,0 +1,40 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Local backend DB and secrets
+server/data/*.db
+server/data/*.db-*
+server/data/pos_pipeline/audit.log.jsonl
+server/data/pos_pipeline/review_store.json
+server/data/pos_pipeline/stores/store-*/llm_config.json
+.env
+.env.*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# deps & build
+node_modules/
+dist/
+.DS_Store
+.env
+.env.*

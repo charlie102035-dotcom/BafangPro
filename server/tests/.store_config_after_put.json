@@ -1,0 +1,200 @@
+{
+  "store_id": "store-smoke",
+  "menu_catalog": [
+    {
+      "item_id": "I001",
+      "canonical_name": "招牌鍋貼",
+      "aliases": [
+        "黃金鍋貼",
+        "原味鍋貼"
+      ]
+    },
+    {
+      "item_id": "I002",
+      "canonical_name": "韭菜鍋貼",
+      "aliases": [
+        "韭菜貼",
+        "韭菜水餃鍋貼"
+      ]
+    },
+    {
+      "item_id": "I003",
+      "canonical_name": "咖哩鍋貼",
+      "aliases": [
+        "咖哩雞肉鍋貼",
+        "咖哩雞鍋貼"
+      ]
+    },
+    {
+      "item_id": "I004",
+      "canonical_name": "高麗菜鍋貼",
+      "aliases": [
+        "高麗菜貼"
+      ]
+    },
+    {
+      "item_id": "I005",
+      "canonical_name": "玉米鍋貼",
+      "aliases": [
+        "玉米貼"
+      ]
+    },
+    {
+      "item_id": "I006",
+      "canonical_name": "韓式泡菜鍋貼",
+      "aliases": [
+        "泡菜鍋貼"
+      ]
+    },
+    {
+      "item_id": "I007",
+      "canonical_name": "酸辣湯",
+      "aliases": [
+        "酸辣湯(小)",
+        "酸辣湯小"
+      ]
+    },
+    {
+      "item_id": "I008",
+      "canonical_name": "玉米濃湯",
+      "aliases": [
+        "玉米湯"
+      ]
+    },
+    {
+      "item_id": "I009",
+      "canonical_name": "貢丸湯",
+      "aliases": [
+        "丸子湯"
+      ]
+    },
+    {
+      "item_id": "I010",
+      "canonical_name": "豆漿",
+      "aliases": [
+        "熱豆漿",
+        "冰豆漿"
+      ]
+    },
+    {
+      "item_id": "I011",
+      "canonical_name": "米漿",
+      "aliases": [
+        "熱米漿",
+        "冰米漿"
+      ]
+    },
+    {
+      "item_id": "I012",
+      "canonical_name": "紅茶",
+      "aliases": [
+        "古早味紅茶"
+      ]
+    },
+    {
+      "item_id": "I013",
+      "canonical_name": "奶茶",
+      "aliases": [
+        "古早味奶茶"
+      ]
+    },
+    {
+      "item_id": "I014",
+      "canonical_name": "珍珠奶茶",
+      "aliases": [
+        "珍奶",
+        "波霸奶茶"
+      ]
+    },
+    {
+      "item_id": "I015",
+      "canonical_name": "冬瓜茶",
+      "aliases": [
+        "冬瓜"
+      ]
+    },
+    {
+      "item_id": "I016",
+      "canonical_name": "檸檬紅茶",
+      "aliases": [
+        "檸紅"
+      ]
+    },
+    {
+      "item_id": "I017",
+      "canonical_name": "滷蛋",
+      "aliases": [
+        "魯蛋"
+      ]
+    },
+    {
+      "item_id": "I018",
+      "canonical_name": "皮蛋豆腐",
+      "aliases": [
+        "皮蛋豆腐小菜"
+      ]
+    },
+    {
+      "item_id": "I019",
+      "canonical_name": "燙青菜",
+      "aliases": [
+        "青菜"
+      ]
+    },
+    {
+      "item_id": "I020",
+      "canonical_name": "小黃瓜",
+      "aliases": [
+        "涼拌小黃瓜"
+      ]
+    },
+    {
+      "item_id": "I021",
+      "canonical_name": "炸豆腐",
+      "aliases": [
+        "酥炸豆腐"
+      ]
+    },
+    {
+      "item_id": "I022",
+      "canonical_name": "炸雞塊",
+      "aliases": [
+        "雞塊"
+      ]
+    }
+  ],
+  "allowed_mods": [
+    "加辣",
+    "小辣",
+    "中辣",
+    "大辣",
+    "去醬",
+    "少醬",
+    "醬另外放",
+    "不加蔥",
+    "去蔥",
+    "加蔥",
+    "去蒜",
+    "少油",
+    "加蛋",
+    "不要香菜",
+    "湯分開",
+    "同袋",
+    "分開裝",
+    "去冰",
+    "少冰",
+    "無糖",
+    "SMOKE_MARKER_A",
+    "SMOKE_MARKER_B",
+    "SMOKE_MARKER_A_mlmu9vqt",
+    "SMOKE_MARKER_B_mlmu9vqt",
+    "SMOKE_MARKER_A_mlmuyn1v"
+  ],
+  "menu_catalog_version": "menu_7392ce1d39dfc230",
+  "allowed_mods_version": "mods_ab0229bb0a8a31ea",
+  "file_paths": {
+    "menu_catalog": "/Users/charlie/bafang-box-order/server/data/pos_pipeline/stores/store-smoke/menu_catalog.json",
+    "allowed_mods": "/Users/charlie/bafang-box-order/server/data/pos_pipeline/stores/store-smoke/allowed_mods.json"
+  },
+  "loaded_at": "2026-02-14T21:58:19.743Z"
+}

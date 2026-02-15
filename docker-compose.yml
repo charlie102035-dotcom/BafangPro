@@ -1,0 +1,41 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: 8787
+      AUTH_DB_PATH: /app/server/data/auth.db
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      CORS_ORIGINS: https://${DOMAIN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      POS_LLM_API_KEY: ${POS_LLM_API_KEY:-}
+      POS_LLM_MODEL: ${POS_LLM_MODEL:-gpt-4o-mini}
+      POS_LLM_TIMEOUT_S: ${POS_LLM_TIMEOUT_S:-15}
+      POS_LLM_BASE_URL: ${POS_LLM_BASE_URL:-https://api.openai.com/v1}
+    volumes:
+      - app_data:/app/server/data
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      EMAIL: ${EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:

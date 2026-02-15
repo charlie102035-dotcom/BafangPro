@@ -1,0 +1,14 @@
+Bafang Demo Delivery Package
+
+This package contains production build only.
+No src source code included.
+
+Deploy steps:
+1) Upload the dist/ folder contents to your web root.
+2) Configure web server for SPA fallback:
+   - Serve /index.html for unknown routes.
+3) Ensure these files are NOT publicly served:
+   - src/, .git/, node_modules/, .env*, *.map
+
+Runtime:
+- Static hosting only (Nginx/Apache/CDN)
