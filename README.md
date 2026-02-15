@@ -208,6 +208,19 @@ sudo usermod -aG docker $USER
 
 重新登入 SSH 讓 docker 群組生效。
 
+也可用一鍵初始化（推薦）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/charlie102035-dotcom/BafangPro/main/deploy/bootstrap-vps.sh -o /tmp/bootstrap-vps.sh
+chmod +x /tmp/bootstrap-vps.sh
+REPO_URL="https://github.com/charlie102035-dotcom/BafangPro.git" \
+DOMAIN="app.yourdomain.com" \
+EMAIL="ops@yourdomain.com" \
+AUTH_JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')" \
+ADMIN_PASSWORD="0000" \
+/tmp/bootstrap-vps.sh
+```
+
 ### 2. DNS 與程式放置
 
 1. 把網域 `A` 記錄指到 VPS 公網 IP（例如 `app.yourdomain.com`）。
