@@ -284,3 +284,5 @@ bash deploy/deploy.sh
 - `docker compose up -d --build`
 
 不需要再手動上傳 zip、解壓、重部署。
+
+[deploy check 2026年 2月15日 星期日 10時52分28秒 CST]
