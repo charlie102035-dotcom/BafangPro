@@ -207,6 +207,25 @@ const buildSimulatedTimeoutError = () => {
   return error;
 };
 
+const deriveLlmUsage = ({ order, llmConfig }) => {
+  const structuredMeta = isObject(order?.metadata?.structured_result_metadata)
+    ? order.metadata.structured_result_metadata
+    : {};
+  const llmAttemptsRaw = structuredMeta.llm_attempts;
+  const llmAttempts = Number.isFinite(Number(llmAttemptsRaw)) ? Math.max(0, Math.round(Number(llmAttemptsRaw))) : 0;
+  const llmFallbackReason = normalizeText(structuredMeta.fallback_reason, '');
+  const llmAttempted = llmAttempts > 0;
+  const llmUsed = llmAttempted && !llmFallbackReason;
+
+  return {
+    llm_used: llmUsed,
+    llm_attempted: llmAttempted,
+    llm_attempts: llmAttempts,
+    llm_fallback_reason: llmFallbackReason || null,
+    llm_runtime: isObject(llmConfig) ? llmConfig : null,
+  };
+};
+
 export function createIngestService({ reviewService, auditStore, storeConfigService }) {
   const ingestPosText = async (requestPayload) => {
     const sourceText = normalizeText(requestPayload?.source_text ?? requestPayload?.text);
@@ -303,11 +322,18 @@ export function createIngestService({ reviewService, auditStore, storeConfigServ
     const dispatchDecision = classifyOrderDispatch(order);
     const reviewQueueStatus = dispatchDecision.route === 'review-queue' ? 'pending_review' : 'dispatch_ready';
 
+    const llmUsage = deriveLlmUsage({ order, llmConfig });
+
     order.metadata = {
       ...(isObject(order.metadata) ? order.metadata : {}),
       dispatch_decision: dispatchDecision,
       ingest_metadata: ingestMetadata,
       ingest_engine: engine,
+      llm_used: llmUsage.llm_used,
+      llm_attempted: llmUsage.llm_attempted,
+      llm_attempts: llmUsage.llm_attempts,
+      llm_fallback_reason: llmUsage.llm_fallback_reason,
+      llm_runtime: llmUsage.llm_runtime,
       store_id: storeId,
       menu_catalog_version: menuCatalogVersion,
       allowed_mods_version: allowedModsVersion,
@@ -328,6 +354,11 @@ export function createIngestService({ reviewService, auditStore, storeConfigServ
         source: 'orders_ingest_api',
         dispatch_decision: dispatchDecision,
         ingest_engine: engine,
+        llm_used: llmUsage.llm_used,
+        llm_attempted: llmUsage.llm_attempted,
+        llm_attempts: llmUsage.llm_attempts,
+        llm_fallback_reason: llmUsage.llm_fallback_reason,
+        llm_runtime: llmUsage.llm_runtime,
         store_id: storeId,
         menu_catalog_version: menuCatalogVersion,
         allowed_mods_version: allowedModsVersion,

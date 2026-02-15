@@ -52,6 +52,7 @@ type PendingOrderView = {
   reasons: PendingReason[];
   lines: PendingLine[];
   detail: ReviewOrderDetail;
+  llmUsed: boolean;
 };
 
 type ActionKind = 'editing' | 'accepting' | 'rejecting';
@@ -123,6 +124,14 @@ const buildPendingOrderView = (
 ): PendingOrderView | null => {
   const orderPayload = isRecord(detail.orderPayload) ? detail.orderPayload : {};
   const order = isRecord(orderPayload.order) ? orderPayload.order : {};
+  const orderMetadata = isRecord(order.metadata) ? order.metadata : {};
+  const structuredMeta = isRecord(orderMetadata.structured_result_metadata)
+    ? orderMetadata.structured_result_metadata
+    : {};
+  const llmUsedByFlag = orderMetadata.llm_used === true;
+  const llmAttemptsRaw = asNumber(structuredMeta.llm_attempts);
+  const llmFallbackReason = asText(structuredMeta.fallback_reason);
+  const llmUsed = llmUsedByFlag || (llmAttemptsRaw !== null && llmAttemptsRaw > 0 && !llmFallbackReason);
   const items = Array.isArray(order.items) ? order.items : [];
   const linesRaw = Array.isArray(order.lines) ? order.lines : [];
 
@@ -188,6 +197,7 @@ const buildPendingOrderView = (
     reasons,
     lines: lineViews,
     detail,
+    llmUsed,
   };
 };
 
@@ -736,6 +746,9 @@ function IngestEnginePanel({
               const hasLowConfidence = order.reasons.includes('low_confidence');
               const hasSoldOut = order.reasons.includes('sold_out');
               const showSoldOutView = hasSoldOut;
+              const aiLabel = order.llmUsed ? 'AI' : null;
+              const aiTitle = order.llmUsed ? '已使用 AI 辨識' : null;
+              const resultLabel = order.llmUsed ? 'AI辨識' : '規則推斷';
               return (
                 <article
                   key={order.orderId}
@@ -749,6 +762,14 @@ function IngestEnginePanel({
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
+                      {aiLabel && (
+                        <span
+                          title={aiTitle ?? undefined}
+                          className="inline-flex h-6 items-center rounded-full border border-emerald-300 bg-emerald-100 px-2 text-[11px] font-semibold text-emerald-800"
+                        >
+                          {aiLabel}
+                        </span>
+                      )}
                       {hasLowConfidence && (
                         <span className="inline-flex h-6 items-center rounded-full border border-amber-300 bg-amber-100 px-2 text-[11px] font-semibold text-amber-800">
                           信心不足
@@ -772,7 +793,7 @@ function IngestEnginePanel({
                       </div>
 
                       <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">AI辨識</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{resultLabel}</p>
                         <div className="bafang-soft-scroll mt-1 max-h-[170px] space-y-1.5 overflow-auto">
                           {order.lines.map((line) => (
                             <div
@@ -795,7 +816,7 @@ function IngestEnginePanel({
 
                   {showSoldOutView && (
                     <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-2.5">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">AI辨識</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{resultLabel}</p>
                       <div className="bafang-soft-scroll mt-1 max-h-[180px] space-y-1.5 overflow-auto">
                         {order.lines.map((line) => (
                           <div
