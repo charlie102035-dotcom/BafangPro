@@ -221,6 +221,17 @@ ADMIN_PASSWORD="0000" \
 /tmp/bootstrap-vps.sh
 ```
 
+如果你暫時沒有網域，可直接填 VPS IP（先用 HTTP）：
+
+```bash
+REPO_URL="https://github.com/charlie102035-dotcom/BafangPro.git" \
+DOMAIN="176.57.150.37" \
+EMAIL="charlie.102035@gmail.com" \
+AUTH_JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')" \
+ADMIN_PASSWORD="0000" \
+/tmp/bootstrap-vps.sh
+```
+
 ### 2. DNS 與程式放置
 
 1. 把網域 `A` 記錄指到 VPS 公網 IP（例如 `app.yourdomain.com`）。

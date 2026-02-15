@@ -39,7 +39,6 @@ upsert_env() {
 
 require_var "REPO_URL" "$REPO_URL"
 require_var "DOMAIN" "$DOMAIN"
-require_var "EMAIL" "$EMAIL"
 require_var "AUTH_JWT_SECRET" "$AUTH_JWT_SECRET"
 
 export DEBIAN_FRONTEND=noninteractive
@@ -103,4 +102,8 @@ upsert_env ".env" "POS_LLM_API_KEY" "$POS_LLM_API_KEY"
 docker compose up -d --build --remove-orphans
 docker compose ps
 
-echo "Done. App should be live at https://${DOMAIN}"
+if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Done. App should be live at http://${DOMAIN}"
+else
+  echo "Done. App should be live at http://${DOMAIN} (current Caddy mode)"
+fi

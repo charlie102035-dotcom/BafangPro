@@ -10,7 +10,7 @@ services:
       AUTH_DB_PATH: /app/server/data/auth.db
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      CORS_ORIGINS: https://${DOMAIN}
+      CORS_ORIGINS: http://${DOMAIN},https://${DOMAIN}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       POS_LLM_API_KEY: ${POS_LLM_API_KEY:-}
       POS_LLM_MODEL: ${POS_LLM_MODEL:-gpt-4o-mini}
