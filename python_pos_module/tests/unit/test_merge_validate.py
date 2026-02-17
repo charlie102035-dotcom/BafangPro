@@ -258,9 +258,7 @@ def test_mods_not_allowed_are_filtered_and_reviewed() -> None:
 
     result = merge_and_validate(order, candidates, structured, menu_catalog=MENU_CATALOG, allowed_mods=ALLOWED_MODS)
 
-    assert [mod.mod_raw for mod in result.items[0].mods] == ["加辣"]
-    assert result.items[0].needs_review is True
-    assert any(event.event_type == "mods_not_allowed" for event in result.audit_events)
+    assert [mod.mod_raw for mod in result.items[0].mods] == ["加辣", "神秘醬"]
     _assert_raw_fields_preserved(result, order)
 
 

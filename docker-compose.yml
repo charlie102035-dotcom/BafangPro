@@ -12,6 +12,7 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       CORS_ORIGINS: http://${DOMAIN},https://${DOMAIN}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      POS_LLM_PROVIDER: ${POS_LLM_PROVIDER:-openai}
       POS_LLM_API_KEY: ${POS_LLM_API_KEY:-}
       POS_LLM_MODEL: ${POS_LLM_MODEL:-gpt-4o-mini}
       POS_LLM_TIMEOUT_S: ${POS_LLM_TIMEOUT_S:-15}

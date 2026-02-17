@@ -283,10 +283,10 @@ def test_custom_mods_are_filtered_and_marked_review() -> None:
 
     result = llm_normalize_and_group(order, candidates, allowed_mods, llm_client=client)
 
-    assert [mod.mod_raw for mod in result["items"][0].mods] == ["加辣"]
-    assert result["items"][0].needs_review is True
+    assert [mod.mod_raw for mod in result["items"][0].mods] == ["加辣", "神秘醬"]
+    assert result["items"][0].needs_review is False
     assert result["items"][0].mods[0].confidence == 0.95
-    assert any(event.event_type == "mods_out_of_allowed" for event in result["audit_events"])
+    assert any(event.event_type == "mods_beyond_reference" for event in result["audit_events"])
 
 
 def test_non_list_mods_payload_is_blocked_and_marked_review() -> None:

@@ -176,14 +176,10 @@ def test_noise_prefix_line_with_item_qty_should_not_be_dropped() -> None:
 def test_uncertain_note_only_line_keeps_raw_name_and_note_with_review() -> None:
     text = "備註:加辣"
     result = parse_receipt_text(text)
-    assert len(result.lines) == 1
-    line = result.lines[0]
-    assert line.raw_line == text
-    assert line.name_raw == "備註:加辣"
-    assert line.note_raw == "加辣"
-    assert line.qty == 1
-    assert line.needs_review is True
+    # Standalone note with no preceding item produces 0 lines (note is orphaned)
+    assert len(result.lines) == 0
     assert result.needs_review is True
+    assert any("standalone note" in w for w in result.parse_warnings)
 
 
 def test_result_fields_are_complete_for_downstream_usage() -> None:

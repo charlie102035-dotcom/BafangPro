@@ -100,7 +100,24 @@ type SettingsSaveNotice = {
 
 type CustomerPage = 'landing' | 'ordering' | 'cart';
 type AppPerspective = 'customer' | 'production' | 'packaging' | 'settings' | 'ingest';
-type SettingsPanel = 'stations' | 'menu';
+type SettingsPanel = 'stations' | 'menu' | 'apiHub';
+
+type DeviceAuthMethod = 'none' | 'api_key' | 'bearer_token';
+type DeviceConnectionStatus = 'unknown' | 'ok' | 'error';
+type HardwareDeviceType = 'receipt_printer' | 'label_printer' | 'scale' | 'display' | 'kds' | 'other';
+
+type ApiHubDevice = {
+  id: string;
+  name: string;
+  deviceType: HardwareDeviceType;
+  endpointUrl: string;
+  authMethod: DeviceAuthMethod;
+  authSecret: string;
+  enabled: boolean;
+  note: string;
+  lastTestStatus: DeviceConnectionStatus;
+  lastTestAt: number | null;
+};
 type PrepStation = 'none' | ProductionSection;
 type PackagingStatus = 'waiting_pickup' | 'served';
 type PackagingItemTrackStatus = 'queued' | 'in_progress' | 'ready' | 'packed' | 'issue';
@@ -108,6 +125,9 @@ type PackagingLaneId = string;
 type RoutingMatchMode = 'any' | 'yes' | 'no';
 type WorkflowMatchMode = 'all' | 'any';
 type WorkflowDependencyMode = 'all';
+type FeatureFlagKey = 'apiHub' | 'ingestEngine' | 'customerTutorial';
+type FeatureFlags = Record<FeatureFlagKey, boolean>;
+type StationLanguage = 'zh-TW' | 'vi' | 'my' | 'id';
 type WorkflowStationTagRule = {
   id: string;
   tag: string;
@@ -122,6 +142,7 @@ type WorkflowStation = {
   matchMode: WorkflowMatchMode;
   categoryRules: Record<MenuCategory, RoutingMatchMode>;
   tagRules: WorkflowStationTagRule[];
+  language?: StationLanguage;
 };
 type WorkflowMenuItem = MenuItem & {
   tags: string[];
@@ -353,6 +374,179 @@ const MAX_CONFIG_QUANTITY = 9999;
 const WORKFLOW_SETTINGS_STORAGE_KEY = 'bafang.workflow.settings.v1';
 const CUSTOMER_TUTORIAL_STORAGE_KEY = 'bafang.customer.tutorial.v1';
 const USER_RUNTIME_STORAGE_KEY = 'bafang.user.runtime.v1';
+const API_HUB_STORAGE_KEY = 'bafang.api-hub.devices.v1';
+const FEATURE_FLAGS_STORAGE_KEY = 'bafang.feature-flags.v1';
+const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
+  apiHub: true, ingestEngine: true, customerTutorial: true,
+};
+const STATION_LANGUAGES: Array<{ code: StationLanguage; label: string }> = [
+  { code: 'zh-TW', label: '中' },
+  { code: 'vi', label: 'VI' },
+  { code: 'my', label: 'MY' },
+  { code: 'id', label: 'ID' },
+];
+
+const PROD_I18N: Record<string, Record<StationLanguage, string>> = {
+  section_griddle: { 'zh-TW': '煎台', vi: 'Chiên', my: 'ကြော်ခုံ', id: 'Panggang' },
+  section_dumpling: { 'zh-TW': '水餃', vi: 'Sủi cảo', my: 'ပေါင်းမုန့်', id: 'Pangsit' },
+  section_noodle: { 'zh-TW': '麵台', vi: 'Quầy mì', my: 'ခေါက်ဆွဲခုံ', id: 'Meja mie' },
+  waiting_to_cook: { 'zh-TW': '待下鍋', vi: 'Chờ chiên', my: 'ချက်ရန်စောင့်', id: 'Menunggu dimasak' },
+  frying: { 'zh-TW': '煎製中', vi: 'Đang chiên', my: 'ကြော်နေသည်', id: 'Sedang digoreng' },
+  completed: { 'zh-TW': '已完成', vi: 'Hoàn thành', my: 'ပြီးဆုံးပြီ', id: 'Selesai' },
+  collapse: { 'zh-TW': '收合', vi: 'Thu gọn', my: 'ခေါက်သိမ်း', id: 'Tutup' },
+  view: { 'zh-TW': '查看', vi: 'Xem', my: 'ကြည့်ရှု', id: 'Lihat' },
+  drop_in_pan: { 'zh-TW': '下鍋', vi: 'Cho vào chảo', my: 'အိုးထဲထည့်', id: 'Masukkan' },
+  lift_pot: { 'zh-TW': '起鍋', vi: 'Vớt ra', my: 'ထုတ်ယူ', id: 'Angkat' },
+  lock: { 'zh-TW': '鎖定', vi: 'Khóa', my: 'လော့ခ်', id: 'Kunci' },
+  unlock: { 'zh-TW': '解鎖', vi: 'Mở khóa', my: 'လော့ခ်ဖွင့်', id: 'Buka kunci' },
+  single_load: { 'zh-TW': '單次負荷', vi: 'Tải một lần', my: 'တစ်ကြိမ်ဝန်', id: 'Kapasitas sekali' },
+  fry_duration: { 'zh-TW': '煎製時長', vi: 'Thời gian chiên', my: 'ကြော်ချိန်', id: 'Durasi goreng' },
+  recalculate: { 'zh-TW': '重新估算', vi: 'Tính lại', my: 'ပြန်တွက်', id: 'Hitung ulang' },
+  batch_flavor_stats: { 'zh-TW': '本鍋口味統計', vi: 'Thống kê vị lần này', my: 'ဤအကြိမ်အရသာစာရင်း', id: 'Statistik rasa batch ini' },
+  unit_pieces: { 'zh-TW': '顆', vi: 'viên', my: 'လုံး', id: 'biji' },
+  unit_batches: { 'zh-TW': '批', vi: 'lô', my: 'အသုတ်', id: 'batch' },
+  estimated: { 'zh-TW': '預估', vi: 'Dự kiến', my: 'ခန့်မှန်း', id: 'Estimasi' },
+  not_assigned_station: { 'zh-TW': '尚未分配煎台', vi: 'Chưa phân trạm', my: 'ခုံမသတ်မှတ်ရသေး', id: 'Belum ditentukan' },
+  already_split: { 'zh-TW': '已拆單', vi: 'Đã tách', my: 'ခွဲပြီး', id: 'Sudah dipisah' },
+  split_order: { 'zh-TW': '拆單', vi: 'Tách đơn', my: 'အော်ဒါခွဲ', id: 'Pisah pesanan' },
+  lift_pot_done: { 'zh-TW': '起鍋完成', vi: 'Vớt xong', my: 'ထုတ်ယူပြီး', id: 'Angkat selesai' },
+  collapse_order_detail: { 'zh-TW': '收合訂單明細', vi: 'Thu gọn chi tiết', my: 'အသေးစိတ်ခေါက်သိမ်း', id: 'Tutup detail pesanan' },
+  view_order_detail: { 'zh-TW': '查看訂單明細', vi: 'Xem chi tiết', my: 'အသေးစိတ်ကြည့်', id: 'Lihat detail pesanan' },
+  total_potsticker_count: { 'zh-TW': '累計鍋貼顆數', vi: 'Tổng bánh rán', my: 'စုစုပေါင်းပေါင်မုန့်', id: 'Total potsticker' },
+  no_waiting_orders: { 'zh-TW': '目前無待下鍋訂單', vi: 'Không có đơn chờ', my: 'စောင့်ဆိုင်းမှာယူမှုမရှိ', id: 'Tidak ada pesanan menunggu' },
+  no_active_batches: { 'zh-TW': '目前無進行中批次', vi: 'Không có lô đang chiên', my: 'လက်ရှိအသုတ်မရှိ', id: 'Tidak ada batch aktif' },
+  no_cookable_batches: { 'zh-TW': '目前無可下鍋批次', vi: 'Không có lô để chiên', my: 'ချက်ရန်အသုတ်မရှိ', id: 'Tidak ada batch siap masak' },
+  no_flavor_data: { 'zh-TW': '目前無口味資料', vi: 'Không có dữ liệu vị', my: 'အရသာဒေတာမရှိ', id: 'Tidak ada data rasa' },
+  pending: { 'zh-TW': '待處理', vi: 'Chờ xử lý', my: 'လုပ်ဆောင်ရန်', id: 'Menunggu' },
+  in_progress: { 'zh-TW': '進行中', vi: 'Đang xử lý', my: 'လုပ်ဆောင်နေ', id: 'Sedang proses' },
+  n_orders: { 'zh-TW': '張訂單', vi: 'đơn hàng', my: 'မှာယူမှု', id: 'pesanan' },
+  order_number: { 'zh-TW': '訂單編號', vi: 'Mã đơn hàng', my: 'မှာယူမှုနံပါတ်', id: 'Nomor pesanan' },
+  no_pending_orders: { 'zh-TW': '目前無待處理訂單', vi: 'Không có đơn chờ xử lý', my: 'လုပ်ဆောင်ရန်မရှိ', id: 'Tidak ada pesanan menunggu' },
+  no_completed_records: { 'zh-TW': '目前無完成紀錄', vi: 'Không có bản ghi hoàn thành', my: 'ပြီးဆုံးမှတ်တမ်းမရှိ', id: 'Tidak ada catatan selesai' },
+  cooking: { 'zh-TW': '煮製中', vi: 'Đang nấu', my: 'ချက်နေသည်', id: 'Sedang dimasak' },
+  task_dumpling: { 'zh-TW': '水餃', vi: 'Sủi cảo', my: 'ပေါင်းမုန့်', id: 'Pangsit' },
+  task_noodle: { 'zh-TW': '麵/冬粉', vi: 'Mì/Miến', my: 'ခေါက်ဆွဲ/ဝူံချေ', id: 'Mie/Soun' },
+  task_side_heat: { 'zh-TW': '加熱小菜', vi: 'Hâm món phụ', my: 'အပူပေးဟင်းလျာ', id: 'Panaskan lauk' },
+  dumpling_orders: { 'zh-TW': '水餃訂單', vi: 'Đơn sủi cảo', my: 'ပေါင်းမုန့်မှာစာ', id: 'Pesanan pangsit' },
+  scoop_out: { 'zh-TW': '撈起', vi: 'Vớt lên', my: 'ကောက်ယူ', id: 'Angkat' },
+  scoop_done: { 'zh-TW': '撈起完成', vi: 'Vớt xong', my: 'ကောက်ယူပြီး', id: 'Selesai angkat' },
+  confirm_force_end: { 'zh-TW': '確認強制結束', vi: 'Xác nhận kết thúc', my: 'အတင်းရပ်ရန်အတည်ပြု', id: 'Konfirmasi paksa selesai' },
+  no_dumpling_orders: { 'zh-TW': '目前無水餃訂單', vi: 'Không có đơn sủi cảo', my: 'မှာယူမှုမရှိ', id: 'Tidak ada pesanan pangsit' },
+  dumpling_grabber: { 'zh-TW': '水餃抓取器', vi: 'Bộ gắp sủi cảo', my: 'ဆွဲယူစက်', id: 'Pengambil pangsit' },
+  batch_grab_target: { 'zh-TW': '批次抓取目標', vi: 'Mục tiêu lô', my: 'အသုတ်ပစ်မှတ်', id: 'Target batch' },
+  grab_batch: { 'zh-TW': '抓取批次', vi: 'Gắp lô', my: 'အသုတ်ဆွဲယူ', id: 'Ambil batch' },
+  cook_this_batch: { 'zh-TW': '這批下鍋', vi: 'Cho lô này vào', my: 'ဒီအသုတ်ချက်', id: 'Masak batch ini' },
+  captured_batch: { 'zh-TW': '已抓取批次', vi: 'Lô đã gắp', my: 'ဆွဲယူပြီးအသုတ်', id: 'Batch diambil' },
+  estimated_batch: { 'zh-TW': '預估批次', vi: 'Lô dự kiến', my: 'ခန့်မှန်းအသုတ်', id: 'Estimasi batch' },
+  overflow_fallback: { 'zh-TW': '目標低於最早任務顆數，已抓最早一筆。', vi: 'Mục tiêu thấp hơn, đã gắp đơn đầu tiên.', my: 'ပစ်မှတ်နိမ့်နေ၍ အစောဆုံးကိုဆွဲယူပြီး။', id: 'Target lebih rendah, sudah diambil pesanan pertama.' },
+  no_grabbable_batches: { 'zh-TW': '目前無可抓取水餃批次', vi: 'Không có lô sủi cảo', my: 'ဆွဲယူရန်အသုတ်မရှိ', id: 'Tidak ada batch pangsit' },
+  waiting_pot: { 'zh-TW': '待下鍋', vi: 'Chờ vào nồi', my: 'အိုးထဲထည့်ရန်', id: 'Menunggu dimasak' },
+  in_pot: { 'zh-TW': '鍋中', vi: 'Trong nồi', my: 'အိုးထဲ', id: 'Dalam panci' },
+  ladle: { 'zh-TW': '麵杓', vi: 'Muôi mì', my: 'ခေါက်ဆွဲဇွန်း', id: 'Sendok mie' },
+  ladle_count: { 'zh-TW': '麵杓數量', vi: 'Số muôi mì', my: 'ဇွန်းအရေအတွက်', id: 'Jumlah sendok' },
+  standby: { 'zh-TW': '待命', vi: 'Chờ sẵn', my: 'အဆင်သင့်', id: 'Siaga' },
+  tap_to_assign: { 'zh-TW': '點一下放入此麵杓', vi: 'Nhấn để đưa vào muôi', my: 'ဇွန်းထဲထည့်ရန်နှိပ်', id: 'Ketuk untuk masukkan' },
+  select_order_first: { 'zh-TW': '先從右側選取訂單', vi: 'Chọn đơn bên phải trước', my: 'ညာဘက်မှအရင်ရွေး', id: 'Pilih pesanan dari kanan' },
+  note: { 'zh-TW': '備註', vi: 'Ghi chú', my: 'မှတ်ချက်', id: 'Catatan' },
+  select_reassign: { 'zh-TW': '選取改派', vi: 'Chọn chuyển', my: 'ပြောင်းရွေး', id: 'Pilih pindah' },
+  return_to_queue: { 'zh-TW': '退回待處理', vi: 'Trả về hàng chờ', my: 'တန်းစီသို့ပြန်', id: 'Kembalikan ke antrian' },
+  noodle_orders: { 'zh-TW': '麵台訂單', vi: 'Đơn quầy mì', my: 'ခေါက်ဆွဲမှာစာ', id: 'Pesanan mie' },
+  selected_tap_ladle: { 'zh-TW': '已選取，請點左側麵杓', vi: 'Đã chọn, nhấn muôi bên trái', my: 'ရွေးပြီး ဘယ်ဘက်ဇွန်းနှိပ်', id: 'Terpilih, ketuk sendok kiri' },
+  tap_to_select: { 'zh-TW': '點一下選取後，再點左側麵杓', vi: 'Nhấn chọn, rồi nhấn muôi bên trái', my: 'နှိပ်ရွေးပြီးဘယ်ဇွန်းနှိပ်', id: 'Ketuk pilih, lalu ketuk sendok kiri' },
+  no_noodle_orders: { 'zh-TW': '目前無麵台訂單', vi: 'Không có đơn quầy mì', my: 'ခေါက်ဆွဲမှာယူမှုမရှိ', id: 'Tidak ada pesanan mie' },
+  noodle_hint: { 'zh-TW': '先點右側訂單，再點左側麵杓直接搬入。', vi: 'Chọn đơn bên phải, nhấn muôi bên trái.', my: 'ညာဘက်မှာယူမှုနှိပ်ပြီးဘယ်ဘက်ဇွန်းနှိပ်။', id: 'Pilih pesanan kanan, ketuk sendok kiri.' },
+  dine_in: { 'zh-TW': '內用', vi: 'Ăn tại chỗ', my: 'ဆိုင်တွင်းစား', id: 'Makan di tempat' },
+  takeout: { 'zh-TW': '外帶', vi: 'Mang đi', my: 'ထုတ်ယူ', id: 'Bawa pulang' },
+  current_station: { 'zh-TW': '目前工作站', vi: 'Trạm hiện tại', my: 'လက်ရှိအလုပ်ခုံ', id: 'Stasiun saat ini' },
+  locked_suffix: { 'zh-TW': '（已鎖定）', vi: '(Đã khóa)', my: '(လော့ခ်ထားပြီ)', id: '(Terkunci)' },
+  n_pending_batches: { 'zh-TW': '共 {n} 個待處理批次', vi: '{n} lô chờ xử lý', my: '{n} အသုတ်စောင့်နေ', id: '{n} batch menunggu' },
+  total_n_pieces: { 'zh-TW': '總 {n} 顆', vi: 'Tổng {n} viên', my: 'စုစုပေါင်း {n} လုံး', id: 'Total {n} biji' },
+  completed_n_tasks: { 'zh-TW': '完成 {n} 筆', vi: 'Hoàn thành {n}', my: '{n} ခုပြီးဆုံး', id: 'Selesai {n}' },
+  queued_pieces: { 'zh-TW': '排隊顆數 {n} 顆', vi: 'Xếp hàng {n} viên', my: 'တန်းစီ {n} လုံး', id: 'Antrian {n} biji' },
+  queued_ladles: { 'zh-TW': '排隊麵杓 {n} 筆', vi: 'Xếp hàng {n} muôi', my: 'တန်းစီ {n} ဇွန်း', id: 'Antrian {n} sendok' },
+  pot_pieces: { 'zh-TW': '鍋中顆數 {n} 顆', vi: 'Trong nồi {n} viên', my: 'အိုးထဲ {n} လုံး', id: 'Dalam panci {n} biji' },
+  cooking_n_tasks: { 'zh-TW': '煮製中 {n} 筆', vi: 'Đang nấu {n} mục', my: '{n} ခုချက်နေ', id: 'Memasak {n} item' },
+  n_pieces_suffix: { 'zh-TW': '{n}顆', vi: '{n} viên', my: '{n} လုံး', id: '{n} biji' },
+  n_tasks_suffix: { 'zh-TW': '{n} 筆', vi: '{n} mục', my: '{n} ခု', id: '{n} item' },
+  n_sheets: { 'zh-TW': '{n} 張', vi: '{n} tờ', my: '{n} စောင်', id: '{n} lembar' },
+  used_idle: { 'zh-TW': '使用中 {busy}/{total} · 空閒 {idle}', vi: 'Dùng {busy}/{total} · Rảnh {idle}', my: 'သုံးနေ {busy}/{total} · အား {idle}', id: 'Dipakai {busy}/{total} · Kosong {idle}' },
+  selected_label: { 'zh-TW': '已選取：{label}', vi: 'Đã chọn: {label}', my: 'ရွေးပြီး: {label}', id: 'Terpilih: {label}' },
+  selected_none: { 'zh-TW': '已選取：無', vi: 'Đã chọn: Không', my: 'ရွေးပြီး: မရှိ', id: 'Terpilih: Tidak ada' },
+  note_prefix: { 'zh-TW': '備註：{note}', vi: 'Ghi chú: {note}', my: 'မှတ်ချက်: {note}', id: 'Catatan: {note}' },
+  flavor_count: { 'zh-TW': '{name} {count}顆', vi: '{name} {count} viên', my: '{name} {count} လုံး', id: '{name} {count} biji' },
+  lift_pot_countdown: { 'zh-TW': '起鍋 {n}s', vi: 'Vớt {n}s', my: 'ထုတ်ယူ {n}s', id: 'Angkat {n}s' },
+  scoop_countdown: { 'zh-TW': '撈起 {n}s', vi: 'Vớt {n}s', my: 'ကောက်ယူ {n}s', id: 'Angkat {n}s' },
+  ladle_n: { 'zh-TW': '麵杓 {n}', vi: 'Muôi {n}', my: 'ဇွန်း {n}', id: 'Sendok {n}' },
+  one_batch: { 'zh-TW': '1 批', vi: '1 lô', my: '၁ အသုတ်', id: '1 batch' },
+  overload_warning: { 'zh-TW': '最早單 {orderId} 需 {count} 顆，超出負荷，請調整容量', vi: 'Đơn sớm nhất {orderId} cần {count} viên, vượt tải', my: 'အစောဆုံး {orderId} သည် {count} လုံးလိုပြီး ဝန်ပိုနေသည်', id: 'Pesanan {orderId} butuh {count} biji, melebihi kapasitas' },
+};
+
+const pt = (key: string, lang: StationLanguage): string =>
+  PROD_I18N[key]?.[lang] ?? PROD_I18N[key]?.['zh-TW'] ?? key;
+
+const ptf = (key: string, lang: StationLanguage, vars: Record<string, string | number>): string => {
+  let result = pt(key, lang);
+  for (const [k, v] of Object.entries(vars)) {
+    result = result.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+  }
+  return result;
+};
+
+const DEVICE_TYPE_LABEL: Record<HardwareDeviceType, string> = {
+  receipt_printer: '出單機',
+  label_printer: '標籤機',
+  scale: '電子秤',
+  display: '叫號螢幕',
+  kds: 'KDS',
+  other: '其他',
+};
+const DEVICE_TYPE_OPTIONS: HardwareDeviceType[] = [
+  'receipt_printer', 'label_printer', 'scale', 'display', 'kds', 'other',
+];
+const AUTH_METHOD_LABEL: Record<DeviceAuthMethod, string> = {
+  none: '無認證',
+  api_key: 'API Key',
+  bearer_token: 'Bearer Token',
+};
+
+type HardwareModuleId = 'fry' | 'call_output' | 'ingest';
+type HardwareModuleConfig = Record<HardwareModuleId, boolean>;
+
+const HW_MODULES_STORAGE_KEY = 'bafang.hw-modules.v1';
+const DEFAULT_HW_MODULES: HardwareModuleConfig = { fry: true, call_output: true, ingest: true };
+
+const HW_MODULE_REGISTRY: Array<{
+  id: HardwareModuleId;
+  label: string;
+  description: string;
+  apis: Array<{ method: 'POST' | 'GET'; pathTemplate: string; label: string; description: string }>;
+}> = [
+  {
+    id: 'fry',
+    label: '煎台自動化',
+    description: '溫度感測器回報與目標溫度控制',
+    apis: [
+      { method: 'POST', pathTemplate: '/api/fry/stores/:storeId/sensors/temperature', label: '溫度回報', description: '感測器回報溫度讀數' },
+      { method: 'POST', pathTemplate: '/api/fry/stores/:storeId/sensors/target', label: '目標溫度', description: '設定目標溫度' },
+    ],
+  },
+  {
+    id: 'call_output',
+    label: '叫號系統',
+    description: '叫號機連線',
+    apis: [
+      { method: 'POST', pathTemplate: '/api/call-output/stores/:storeId/enqueue', label: '叫號', description: '新增叫號' },
+    ],
+  },
+  {
+    id: 'ingest',
+    label: '進單引擎',
+    description: '外部 POS 系統送單',
+    apis: [
+      { method: 'POST', pathTemplate: '/api/orders/stores/:storeId/ingest-pos-text', label: '外部送單', description: '外部 POS 送單（文字解析）' },
+    ],
+  },
+];
 const CUSTOMER_TUTORIAL_STEPS: CustomerTutorialStep[] = [
   'box_add',
   'box_switch',
@@ -617,6 +811,20 @@ const readCustomerTutorialPreference = (storageKey: string): CustomerTutorialPre
       completed: false,
     };
   }
+};
+
+const readFeatureFlags = (storageKey: string): FeatureFlags => {
+  if (typeof window === 'undefined') return { ...DEFAULT_FEATURE_FLAGS };
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return { ...DEFAULT_FEATURE_FLAGS };
+    const parsed = JSON.parse(raw) as Partial<FeatureFlags>;
+    return {
+      apiHub: typeof parsed.apiHub === 'boolean' ? parsed.apiHub : true,
+      ingestEngine: typeof parsed.ingestEngine === 'boolean' ? parsed.ingestEngine : true,
+      customerTutorial: typeof parsed.customerTutorial === 'boolean' ? parsed.customerTutorial : true,
+    };
+  } catch { return { ...DEFAULT_FEATURE_FLAGS }; }
 };
 
 const readUserRuntimeSnapshot = (storageKey: string): Partial<UserRuntimeSnapshot> => {
@@ -934,6 +1142,7 @@ const sanitizeStationList = (
         matchMode,
         categoryRules,
         tagRules,
+        language: (['vi','my','id'] as const).includes(station.language as any) ? station.language as StationLanguage : 'zh-TW',
       };
     });
 
@@ -1248,7 +1457,7 @@ const waterServiceModeBadgeClass = (mode: ServiceMode) =>
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
     : 'border-amber-200 bg-amber-50 text-amber-700';
 
-const waterServiceModeLabel = (mode: ServiceMode) => (mode === 'dine_in' ? '內用' : '外帶');
+const waterServiceModeLabel = (mode: ServiceMode, lang: StationLanguage = 'zh-TW') => (mode === 'dine_in' ? pt('dine_in', lang) : pt('takeout', lang));
 
 const actionButtonBase =
   'bafang-action inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold transition-all duration-300 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 disabled:cursor-not-allowed disabled:opacity-50';
@@ -1384,6 +1593,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
   const workflowSettingsStorageKey = withUserStorageScope(WORKFLOW_SETTINGS_STORAGE_KEY, userId);
   const tutorialStorageKey = withUserStorageScope(CUSTOMER_TUTORIAL_STORAGE_KEY, userId);
   const runtimeStorageKey = withUserStorageScope(USER_RUNTIME_STORAGE_KEY, userId);
+  const featureFlagsStorageKey = withUserStorageScope(FEATURE_FLAGS_STORAGE_KEY, userId);
   const runtimeSnapshotRef = useRef<Partial<UserRuntimeSnapshot> | null>(null);
   if (runtimeSnapshotRef.current === null) {
     runtimeSnapshotRef.current = readUserRuntimeSnapshot(runtimeStorageKey);
@@ -1427,6 +1637,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowSettings>(() => workflowSettings);
   const [settingsSaveNotice, setSettingsSaveNotice] = useState<SettingsSaveNotice | null>(null);
   const [settingsLeaveNotice, setSettingsLeaveNotice] = useState<{ stamp: number; phase: 'show' | 'hide' } | null>(null);
+  const [featureFlags] = useState<FeatureFlags>(() => readFeatureFlags(featureFlagsStorageKey));
   const [settingsPanel, setSettingsPanel] = useState<SettingsPanel>('stations');
   const [settingsMenuActiveTag, setSettingsMenuActiveTag] = useState<string>('all');
   const [settingsMenuExpandedItemId, setSettingsMenuExpandedItemId] = useState<string | null>(null);
@@ -1463,6 +1674,75 @@ function AppShell({ userId, authUser }: AppShellProps) {
     prepStation: 'none',
     prepSeconds: '0',
   });
+
+  // --- Hardware module toggles ---
+  const [hwModules, setHwModules] = useState<HardwareModuleConfig>(() => {
+    try {
+      const raw = window.localStorage.getItem(HW_MODULES_STORAGE_KEY);
+      if (!raw) return DEFAULT_HW_MODULES;
+      return { ...DEFAULT_HW_MODULES, ...JSON.parse(raw) } as HardwareModuleConfig;
+    } catch {
+      return DEFAULT_HW_MODULES;
+    }
+  });
+  const toggleHwModule = (id: HardwareModuleId) => {
+    const next = { ...hwModules, [id]: !hwModules[id] };
+    setHwModules(next);
+    try { window.localStorage.setItem(HW_MODULES_STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  };
+
+  // --- API Hub state ---
+  const [apiHubDevices, setApiHubDevices] = useState<ApiHubDevice[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(API_HUB_STORAGE_KEY);
+      if (!raw) return [];
+      return JSON.parse(raw) as ApiHubDevice[];
+    } catch {
+      return [];
+    }
+  });
+  const [apiHubExpandedId, setApiHubExpandedId] = useState<string | null>(null);
+  const [apiHubTestingId, setApiHubTestingId] = useState<string | null>(null);
+
+  const saveApiHubDevices = (devices: ApiHubDevice[]) => {
+    setApiHubDevices(devices);
+    try { window.localStorage.setItem(API_HUB_STORAGE_KEY, JSON.stringify(devices)); } catch { /* ignore */ }
+  };
+  const addApiHubDevice = () => {
+    const id = `dev_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const newDevice: ApiHubDevice = {
+      id, name: '', deviceType: 'receipt_printer', endpointUrl: '',
+      authMethod: 'none', authSecret: '', enabled: true, note: '',
+      lastTestStatus: 'unknown', lastTestAt: null,
+    };
+    const next = [...apiHubDevices, newDevice];
+    saveApiHubDevices(next);
+    setApiHubExpandedId(id);
+  };
+  const removeApiHubDevice = (id: string) => {
+    saveApiHubDevices(apiHubDevices.filter((d) => d.id !== id));
+    if (apiHubExpandedId === id) setApiHubExpandedId(null);
+  };
+  const updateApiHubDevice = (id: string, patch: Partial<ApiHubDevice>) => {
+    saveApiHubDevices(apiHubDevices.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+  };
+  const testApiHubDevice = async (id: string) => {
+    const device = apiHubDevices.find((d) => d.id === id);
+    if (!device || !device.endpointUrl) return;
+    setApiHubTestingId(id);
+    try {
+      const headers: Record<string, string> = {};
+      if (device.authMethod === 'api_key') headers['X-API-Key'] = device.authSecret;
+      if (device.authMethod === 'bearer_token') headers['Authorization'] = `Bearer ${device.authSecret}`;
+      await fetch(device.endpointUrl, { method: 'HEAD', headers, mode: 'no-cors' });
+      updateApiHubDevice(id, { lastTestStatus: 'ok', lastTestAt: Date.now() });
+    } catch {
+      updateApiHubDevice(id, { lastTestStatus: 'error', lastTestAt: Date.now() });
+    } finally {
+      setApiHubTestingId(null);
+    }
+  };
+
   const [customerPage, setCustomerPage] = useState<CustomerPage>(() => runtimeSnapshot?.customerPage ?? 'landing');
   const [serviceMode, setServiceMode] = useState<ServiceMode | null>(() => runtimeSnapshot?.serviceMode ?? null);
   const [customerTutorialPreference, setCustomerTutorialPreference] = useState<CustomerTutorialPreference>(
@@ -1664,7 +1944,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
     setWorkspaceFullscreen(false);
   };
 
-  const customerTutorialEnabled = customerTutorialPreference.enabled;
+  const customerTutorialEnabled = featureFlags.customerTutorial && customerTutorialPreference.enabled;
   const customerTutorialCompleted = customerTutorialPreference.completed;
   const setTutorialTargetRef = (key: string, node: HTMLElement | null) => {
     tutorialTargetRefs.current[key] = node;
@@ -5772,6 +6052,23 @@ function AppShell({ userId, authUser }: AppShellProps) {
     });
   };
 
+  const updateStationLanguage = (stationId: string, lang: StationLanguage) => {
+    const updateStations = (stations: WorkflowStation[]) =>
+      stations.map((s) => (s.id === stationId ? { ...s, language: lang } : s));
+    const nextSettings: WorkflowSettings = {
+      ...workflowSettings,
+      productionStations: updateStations(workflowSettings.productionStations),
+    };
+    setWorkflowSettings(nextSettings);
+    setWorkflowDraft((prev) => ({
+      ...prev,
+      productionStations: updateStations(prev.productionStations),
+    }));
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(workflowSettingsStorageKey, JSON.stringify(nextSettings));
+    }
+  };
+
   const resetWorkflowDraft = () => {
     setWorkflowDraft(workflowSettings);
     setSettingsMenuActiveTag('all');
@@ -5944,11 +6241,12 @@ function AppShell({ userId, authUser }: AppShellProps) {
         return;
       }
       if (!isRecord(entry)) return;
+      const modRaw = typeof entry.mod_raw === 'string' ? entry.mod_raw.trim() : '';
+      const modName = typeof entry.mod_name === 'string' ? entry.mod_name.trim() : '';
       const type = typeof entry.type === 'string' ? entry.type.trim() : '';
       const value = typeof entry.value === 'string' ? entry.value.trim() : '';
-      const label = type
-        ? (value ? `${type}:${value}` : type)
-        : value;
+      const label = modRaw || modName
+        || (type ? (value ? `${type}:${value}` : type) : value);
       if (!label || seen.has(label)) return;
       seen.add(label);
       output.push(label);
@@ -6132,6 +6430,74 @@ function AppShell({ userId, authUser }: AppShellProps) {
     const serviceModeRaw = typeof metadata.service_mode === 'string' ? metadata.service_mode.trim() : '';
     const nextServiceMode: ServiceMode = serviceModeRaw === 'dine_in' ? 'dine_in' : 'takeout';
 
+    // Build lineIndex → CartLine mapping for boxRows
+    const lineIndexToCartLine = new Map<number, CartLine>();
+    parsed.items.forEach((itemRaw, fallbackIndex) => {
+      if (!isRecord(itemRaw)) return;
+      const lineIndex = parseIngestLineIndex(itemRaw.line_index, fallbackIndex);
+      const mapped = mapIngestItemToMenu(itemRaw);
+      if (!mapped.menuItem) return;
+      const noteRaw = typeof itemRaw.note_raw === 'string' ? itemRaw.note_raw.trim() : '';
+      const modLabels = ingestItemModsToLabels(itemRaw.mods);
+      const groupLabelsForLine = groupsByLine.get(lineIndex) ?? [];
+      const segments = [noteRaw, ...modLabels, ...groupLabelsForLine.map((l) => `群組:${l}`)]
+        .map((e) => e.trim()).filter(Boolean);
+      const lineNote = segments.join('；').slice(0, 120);
+      const mergeKey = `${mapped.menuItem.id}|${lineNote || '-'}|${mapped.menuItem.optionType}`;
+      const existing = aggregated.get(mergeKey);
+      if (existing) {
+        lineIndexToCartLine.set(lineIndex, existing);
+      }
+    });
+
+    // Build boxRows from groups
+    const boxRows: SubmittedOrder['boxRows'] = [];
+    parsed.groups.forEach((group) => {
+      if (!isRecord(group)) return;
+      const groupType = typeof group.type === 'string' ? group.type.trim() : '';
+      const groupLabel = typeof group.label === 'string' && group.label.trim()
+        ? group.label.trim()
+        : (typeof group.group_id === 'string' ? group.group_id.trim() : 'group');
+      const lineIndicesRaw = Array.isArray(group.line_indices) ? group.line_indices : [];
+      const memberLines: CartLine[] = [];
+      lineIndicesRaw.forEach((li) => {
+        const idx = parseIngestLineIndex(li, -1);
+        if (idx < 0) return;
+        const cartLine = lineIndexToCartLine.get(idx);
+        if (cartLine && !memberLines.includes(cartLine)) memberLines.push(cartLine);
+      });
+      if (memberLines.length === 0) return;
+
+      if (groupType === 'separate') {
+        // Each item gets its own box
+        memberLines.forEach((cl) => {
+          boxRows.push({
+            id: `ingest-${createId()}`,
+            boxLabel: `${groupLabel} · ${cl.name}`,
+            typeLabel: groupLabel,
+            items: [{ name: cl.name, count: cl.quantity, unitPrice: cl.unitPrice, subtotal: cl.unitPrice * cl.quantity }],
+            subtotal: cl.unitPrice * cl.quantity,
+          });
+        });
+      } else {
+        // pack_together / other → one box for all
+        const items = memberLines.map((cl) => ({
+          name: cl.name,
+          count: cl.quantity,
+          unitPrice: cl.unitPrice,
+          subtotal: cl.unitPrice * cl.quantity,
+        }));
+        const subtotal = items.reduce((s, i) => s + i.subtotal, 0);
+        boxRows.push({
+          id: `ingest-${createId()}`,
+          boxLabel: `${groupLabel} · ${items.length}品`,
+          typeLabel: groupLabel,
+          items,
+          subtotal,
+        });
+      }
+    });
+
     const takenOrderIds = new Set<string>([
       ...productionOrders.map((order) => order.id),
       ...packagingOrders.map((order) => order.id),
@@ -6164,7 +6530,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
       totalCount,
       ...(noteSegments ? { orderNote: noteSegments } : {}),
       cartLines,
-      boxRows: [],
+      boxRows,
     };
 
     return {
@@ -8133,17 +8499,18 @@ function AppShell({ userId, authUser }: AppShellProps) {
         Math.max(0, sectionStations.length - 1),
       );
     const activeSectionStation = sectionStations[activeSectionStationIndex] ?? null;
+    const stationLang: StationLanguage = activeSectionStation?.language ?? 'zh-TW';
     const secondaryRailStep = sectionStations.length > 0 ? 100 / sectionStations.length : 100;
     const isBacklogPreviewOpen = activeFryPreviewPanel === 'backlog';
     const isFryingPreviewOpen = activeFryPreviewPanel === 'frying';
     const waterTaskStatusLabel = (status: WaterTaskStatus) => {
       switch (status) {
         case 'queued':
-          return '待處理';
+          return pt('pending', stationLang);
         case 'cooking':
-          return '進行中';
+          return pt('in_progress', stationLang);
         case 'done':
-          return '已完成';
+          return pt('completed', stationLang);
         default:
           return '';
       }
@@ -8151,11 +8518,11 @@ function AppShell({ userId, authUser }: AppShellProps) {
     const waterTaskTypeLabel = (taskType: WaterTaskType) => {
       switch (taskType) {
         case 'dumpling':
-          return '水餃';
+          return pt('task_dumpling', stationLang);
         case 'noodle':
-          return '麵/冬粉';
+          return pt('task_noodle', stationLang);
         case 'side_heat':
-          return '加熱小菜';
+          return pt('task_side_heat', stationLang);
         default:
           return '';
       }
@@ -8326,8 +8693,26 @@ function AppShell({ userId, authUser }: AppShellProps) {
             </div>
           )}
           {activeSectionStation && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs font-semibold text-slate-700">
-              目前工作站：{activeSectionStation.name}{isProductionStationMode ? '（已鎖定）' : ''}
+            <div className="flex items-center gap-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs font-semibold text-slate-700">
+                {pt('current_station', stationLang)}：{activeSectionStation.name}{isProductionStationMode ? pt('locked_suffix', stationLang) : ''}
+              </div>
+              <div className="flex gap-1">
+                {STATION_LANGUAGES.map((sl) => (
+                  <button
+                    key={sl.code}
+                    type="button"
+                    className={`rounded-lg border px-2 py-1 text-xs font-semibold transition-colors ${
+                      stationLang === sl.code
+                        ? 'border-blue-400 bg-blue-50 text-blue-700'
+                        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                    }`}
+                    onClick={() => updateStationLanguage(activeSectionStation.id, sl.code)}
+                  >
+                    {sl.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </section>
@@ -8337,16 +8722,16 @@ function AppShell({ userId, authUser }: AppShellProps) {
             <div className="grid gap-3 md:grid-cols-12">
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 md:col-span-4">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-amber-700">待下鍋</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-amber-700">{pt('waiting_to_cook', stationLang)}</p>
                   <button
                     className="rounded-lg border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-amber-700 transition hover:border-amber-400 hover:bg-amber-100"
                     onClick={() => toggleFryPreviewPanel('backlog')}
                   >
-                    {isBacklogPreviewOpen ? '收合' : '查看'}
+                    {isBacklogPreviewOpen ? pt('collapse', stationLang) : pt('view', stationLang)}
                   </button>
                 </div>
                 <p className="mt-1 text-2xl font-semibold text-amber-900">{fryBacklogOrderCount}</p>
-                <p className="text-[11px] font-medium text-amber-800">共 {fryBacklogCount} 個待處理批次</p>
+                <p className="text-[11px] font-medium text-amber-800">{ptf('n_pending_batches', stationLang, { n: fryBacklogCount })}</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {fryBacklogPreview.slice(0, 4).map((order) => (
                     <span
@@ -8362,18 +8747,18 @@ function AppShell({ userId, authUser }: AppShellProps) {
                     </span>
                   )}
                   {fryBacklogPreview.length === 0 && (
-                    <span className="text-[11px] font-medium text-amber-700">目前無待下鍋訂單</span>
+                    <span className="text-[11px] font-medium text-amber-700">{pt('no_waiting_orders', stationLang)}</span>
                   )}
                 </div>
               </div>
               <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 md:col-span-5">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-sky-700">煎製中</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-sky-700">{pt('frying', stationLang)}</p>
                   <button
                     className="rounded-lg border border-sky-300 bg-white px-2 py-1 text-[11px] font-semibold text-sky-700 transition hover:border-sky-400 hover:bg-sky-100"
                     onClick={() => toggleFryPreviewPanel('frying')}
                   >
-                    {isFryingPreviewOpen ? '收合' : '查看'}
+                    {isFryingPreviewOpen ? pt('collapse', stationLang) : pt('view', stationLang)}
                   </button>
                 </div>
                 <p className="mt-1 text-2xl font-semibold text-sky-900">{fryingOrderCount}</p>
@@ -8392,14 +8777,14 @@ function AppShell({ userId, authUser }: AppShellProps) {
                     </span>
                   )}
                   {fryingPreviewDetail.length === 0 && (
-                    <span className="text-[11px] font-medium text-sky-700">目前無進行中批次</span>
+                    <span className="text-[11px] font-medium text-sky-700">{pt('no_active_batches', stationLang)}</span>
                   )}
                 </div>
               </div>
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 md:col-span-3">
-                <p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">已完成</p>
+                <p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">{pt('completed', stationLang)}</p>
                 <p className="mt-1 text-2xl font-semibold text-emerald-900">{friedPotstickerPieces}</p>
-                <p className="text-[11px] font-medium text-emerald-800">累計鍋貼顆數</p>
+                <p className="text-[11px] font-medium text-emerald-800">{pt('total_potsticker_count', stationLang)}</p>
               </div>
             </div>
 
@@ -8443,9 +8828,9 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                 </p>
                               </div>
                               <div className="text-right">
-                                <p className="text-sm font-semibold text-amber-800">{order.totalPotstickers} 顆</p>
+                                <p className="text-sm font-semibold text-amber-800">{ptf('n_pieces_suffix', stationLang, { n: order.totalPotstickers })}</p>
                                 <p className="text-[11px] font-medium text-slate-500">
-                                  {order.entries.length > 1 ? `${order.entries.length} 批` : '1 批'}
+                                  {order.entries.length > 1 ? `${order.entries.length} ${pt('unit_batches', stationLang)}` : pt('one_batch', stationLang)}
                                 </p>
                               </div>
                             </div>
@@ -8456,11 +8841,11 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                     key={`estimated-station-${order.orderId}-${label}`}
                                     className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${stationAccentClass(label)}`}
                                   >
-                                    預估 {label}
+                                    {pt('estimated', stationLang)} {label}
                                   </span>
                                 ))
                               ) : (
-                                <span className="text-[11px] font-medium text-slate-500">尚未分配煎台</span>
+                                <span className="text-[11px] font-medium text-slate-500">{pt('not_assigned_station', stationLang)}</span>
                               )}
                             </div>
                             <div className="mt-2 space-y-1.5">
@@ -8472,7 +8857,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                   <div className="flex items-center justify-between gap-2">
                                     <p className="text-xs font-semibold text-amber-900">{entry.entryLabel}</p>
                                     <div className="flex items-center gap-2">
-                                      <p className="text-xs font-semibold text-amber-800">{entry.potstickerCount} 顆</p>
+                                      <p className="text-xs font-semibold text-amber-800">{ptf('n_pieces_suffix', stationLang, { n: entry.potstickerCount })}</p>
                                       {estimatedStationByEntryId.get(entry.entryId) && (
                                         <span className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${
                                           stationAccentClass(estimatedStationByEntryId.get(entry.entryId) ?? '')
@@ -8483,7 +8868,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                     </div>
                                   </div>
                                   <p className="mt-1 text-[11px] font-medium text-amber-800">
-                                    {entry.flavorCounts.map((flavor) => `${flavor.name} ${flavor.count}顆`).join(' · ')}
+                                    {entry.flavorCounts.map((flavor) => ptf('flavor_count', stationLang, { name: flavor.name, count: flavor.count })).join(' · ')}
                                   </p>
                                 </div>
                               ))}
@@ -8498,7 +8883,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                 onClick={() => splitOrderByBox(order.orderId)}
                                 disabled={!canSplit}
                               >
-                                {isSplit ? '已拆單' : '拆單'}
+                                {isSplit ? pt('already_split', stationLang) : pt('split_order', stationLang)}
                               </button>
                             </div>
                           </article>
@@ -8507,7 +8892,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
 
                       {fryBacklogPreview.length === 0 && (
                         <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 px-3 py-4 text-center text-sm font-medium text-amber-800">
-                          目前無待下鍋訂單
+                          {pt('no_waiting_orders', stationLang)}
                         </div>
                       )}
                     </div>
@@ -8528,9 +8913,9 @@ function AppShell({ userId, authUser }: AppShellProps) {
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="text-sm font-semibold text-sky-800">{order.totalPotstickers} 顆</p>
+                              <p className="text-sm font-semibold text-sky-800">{ptf('n_pieces_suffix', stationLang, { n: order.totalPotstickers })}</p>
                               <p className="text-[11px] font-medium text-slate-500">
-                                {order.entries.length > 1 ? `${order.entries.length} 批` : '1 批'}
+                                {order.entries.length > 1 ? `${order.entries.length} ${pt('unit_batches', stationLang)}` : pt('one_batch', stationLang)}
                               </p>
                             </div>
                           </div>
@@ -8552,10 +8937,10 @@ function AppShell({ userId, authUser }: AppShellProps) {
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="text-xs font-semibold text-sky-900">{entry.entryLabel}</p>
-                                  <p className="text-xs font-semibold text-sky-800">{entry.potstickerCount} 顆</p>
+                                  <p className="text-xs font-semibold text-sky-800">{ptf('n_pieces_suffix', stationLang, { n: entry.potstickerCount })}</p>
                                 </div>
                                 <p className="mt-1 text-[11px] font-medium text-sky-800">
-                                  {entry.flavorCounts.map((flavor) => `${flavor.name} ${flavor.count}顆`).join(' · ')}
+                                  {entry.flavorCounts.map((flavor) => ptf('flavor_count', stationLang, { name: flavor.name, count: flavor.count })).join(' · ')}
                                 </p>
                               </div>
                             ))}
@@ -8565,7 +8950,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
 
                       {fryingPreviewDetail.length === 0 && (
                         <div className="rounded-xl border border-dashed border-sky-300 bg-sky-50 px-3 py-4 text-center text-sm font-medium text-sky-800">
-                          目前無進行中批次
+                          {pt('no_active_batches', stationLang)}
                         </div>
                       )}
                     </div>
@@ -8623,8 +9008,8 @@ function AppShell({ userId, authUser }: AppShellProps) {
                 const canLiftPot = isLocked && isTimerStarted && remainingSeconds <= 0;
                 const liftProgress = isLocked && isTimerStarted ? timerProgress : 0;
                 const liftButtonLabel = isLocked && isTimerStarted && remainingSeconds > 0
-                  ? `起鍋 ${remainingSeconds}s`
-                  : '起鍋';
+                  ? ptf('lift_pot_countdown', stationLang, { n: remainingSeconds })
+                  : pt('lift_pot', stationLang);
 
                 return (
                   <article key={station.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -8636,7 +9021,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-                              單次負荷
+                              {pt('single_load', stationLang)}
                             </label>
                             <input
                               type="number"
@@ -8649,7 +9034,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                           </div>
                           <div>
                             <label className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-                              煎製時長
+                              {pt('fry_duration', stationLang)}
                             </label>
                             <input
                               type="number"
@@ -8670,15 +9055,15 @@ function AppShell({ userId, authUser }: AppShellProps) {
                           onClick={recomputeFryRecommendations}
                           disabled={isLocked}
                         >
-                          重新估算
+                          {pt('recalculate', stationLang)}
                         </button>
                       </div>
                     </div>
 
                     <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
                       <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-                        <span>本鍋口味統計</span>
-                        <span>{totalPotstickers} / {station.capacity} 顆</span>
+                        <span>{pt('batch_flavor_stats', stationLang)}</span>
+                        <span>{totalPotstickers} / {station.capacity} {pt('unit_pieces', stationLang)}</span>
                       </div>
                       <div className="mt-2 h-2 rounded-full bg-slate-200">
                         <div
@@ -8695,11 +9080,11 @@ function AppShell({ userId, authUser }: AppShellProps) {
                             className="rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-2 text-amber-900"
                           >
                             <p className="text-xs font-semibold">{flavor.name}</p>
-                            <p className="mt-0.5 text-base font-bold leading-none">{flavor.count}顆</p>
+                            <p className="mt-0.5 text-base font-bold leading-none">{ptf('n_pieces_suffix', stationLang, { n: flavor.count })}</p>
                           </div>
                         ))}
                         {flavorSummary.length === 0 && (
-                          <p className="text-xs font-medium text-slate-500">目前無口味資料</p>
+                          <p className="text-xs font-medium text-slate-500">{pt('no_flavor_data', stationLang)}</p>
                         )}
                       </div>
                     </div>
@@ -8714,7 +9099,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         onClick={() => lockFryStationBatch(station.id)}
                         disabled={!canLockBatch}
                       >
-                        鎖定
+                        {pt('lock', stationLang)}
                       </button>
                       <button
                         className={`${actionButtonBase} min-h-12 ${
@@ -8725,7 +9110,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         onClick={() => startFryStationTimer(station.id)}
                         disabled={!canDropBatch}
                       >
-                        下鍋
+                        {pt('drop_in_pan', stationLang)}
                       </button>
                       <button
                         className={`${actionButtonBase} relative min-h-12 overflow-hidden ${
@@ -8749,7 +9134,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         className={`${actionButtonBase} w-full border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50`}
                         onClick={() => toggleFryOrderDetails(station.id)}
                       >
-                        {showDetails ? '收合訂單明細' : '查看訂單明細'}
+                        {showDetails ? pt('collapse_order_detail', stationLang) : pt('view_order_detail', stationLang)}
                       </button>
 
                       <div className={`grid transition-[grid-template-rows,opacity,margin] duration-400 ease-out ${
@@ -8766,20 +9151,20 @@ function AppShell({ userId, authUser }: AppShellProps) {
                               >
                                 <div className="flex items-center justify-between text-sm">
                                   <p className="font-semibold text-slate-900">{entry.orderId} · {entry.entryLabel}</p>
-                                  <p className="font-semibold text-amber-700">總 {entry.potstickerCount} 顆</p>
+                                  <p className="font-semibold text-amber-700">{ptf('total_n_pieces', stationLang, { n: entry.potstickerCount })}</p>
                                 </div>
                                 <p className="mt-0.5 text-xs font-medium text-slate-500">
                                   {serviceModeLabel(entry.serviceMode)} · {orderTimeLabel(entry.createdAt)}
                                 </p>
                                 <p className="mt-1 text-xs font-medium text-amber-700">
-                                  {entry.flavorCounts.map((flavor) => `${flavor.name} ${flavor.count}顆`).join(' · ')}
+                                  {entry.flavorCounts.map((flavor) => ptf('flavor_count', stationLang, { name: flavor.name, count: flavor.count })).join(' · ')}
                                 </p>
                               </div>
                             ))}
 
                             {displayOrders.length === 0 && (
                               <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-sm font-medium text-slate-500">
-                                目前無可下鍋批次
+                                {pt('no_cookable_batches', stationLang)}
                               </div>
                             )}
                           </div>
@@ -8788,7 +9173,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
 
                       {!isLocked && recommendation.blockedOrder && displayOrders.length === 0 && (
                         <p className="mt-2 text-xs font-semibold text-rose-600">
-                          最早單 {recommendation.blockedOrder.orderId} 需 {recommendation.blockedOrder.potstickerCount} 顆，超出負荷，請調整容量
+                          {ptf('overload_warning', stationLang, { orderId: recommendation.blockedOrder.orderId, count: recommendation.blockedOrder.potstickerCount })}
                         </p>
                       )}
                     </div>
@@ -8807,24 +9192,24 @@ function AppShell({ userId, authUser }: AppShellProps) {
               >
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_240px] sm:gap-4">
                   <div className="sm:pr-4">
-                    <p className="text-xs font-semibold uppercase tracking-widest text-blue-700">待處理</p>
+                    <p className="text-xs font-semibold uppercase tracking-widest text-blue-700">{pt('pending', stationLang)}</p>
                     <p className="mt-1 text-4xl font-bold leading-none text-blue-900">{waterSectionQueuedOrderCount}</p>
-                    <p className="mt-1 text-[11px] font-medium text-blue-800">張訂單</p>
+                    <p className="mt-1 text-[11px] font-medium text-blue-800">{pt('n_orders', stationLang)}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] font-semibold text-blue-800">
                       <span className="rounded-full border border-blue-200 bg-white px-2 py-0.5">
                         {isDumplingSection
-                          ? `排隊顆數 ${waterSectionQueuedPieceCount} 顆`
-                          : `排隊麵杓 ${waterSectionQueuedTasks.length} 筆`}
+                          ? ptf('queued_pieces', stationLang, { n: waterSectionQueuedPieceCount })
+                          : ptf('queued_ladles', stationLang, { n: waterSectionQueuedTasks.length })}
                       </span>
                       <span className="rounded-full border border-blue-200 bg-white px-2 py-0.5">
                         {isDumplingSection
-                          ? `鍋中顆數 ${waterDumplingCookingPieces} 顆`
-                          : `煮製中 ${waterSectionCookingTaskCount} 筆`}
+                          ? ptf('pot_pieces', stationLang, { n: waterDumplingCookingPieces })
+                          : ptf('cooking_n_tasks', stationLang, { n: waterSectionCookingTaskCount })}
                       </span>
                     </div>
                   </div>
                   <div className="sm:border-l sm:border-blue-200 sm:pl-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-blue-700">訂單編號</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-blue-700">{pt('order_number', stationLang)}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {waterSectionQueuedOrderPreview.slice(0, 8).map((orderId) => (
                         <span
@@ -8840,7 +9225,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         </span>
                       )}
                       {waterSectionQueuedOrderPreview.length === 0 && (
-                        <span className="text-[11px] font-medium text-blue-700">目前無待處理訂單</span>
+                        <span className="text-[11px] font-medium text-blue-700">{pt('no_pending_orders', stationLang)}</span>
                       )}
                     </div>
                   </div>
@@ -8852,7 +9237,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_200px] sm:gap-4">
                   <div className="sm:pr-4">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">已完成</p>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-emerald-700">{pt('completed', stationLang)}</p>
                       <button
                         className={`rounded-lg px-2 py-1 text-[11px] font-semibold transition ${
                           waterSectionDoneOrderCount > 0
@@ -8867,14 +9252,14 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         }
                         disabled={waterSectionDoneOrderCount === 0}
                       >
-                        {showWaterCompletedPanel ? '收合' : '查看'}
+                        {showWaterCompletedPanel ? pt('collapse', stationLang) : pt('view', stationLang)}
                       </button>
                     </div>
                     <p className="mt-1 text-4xl font-bold leading-none text-emerald-900">{waterSectionDoneOrderCount}</p>
-                    <p className="mt-1 text-[11px] font-medium text-emerald-800">張訂單</p>
+                    <p className="mt-1 text-[11px] font-medium text-emerald-800">{pt('n_orders', stationLang)}</p>
                   </div>
                   <div className="sm:border-l sm:border-emerald-200 sm:pl-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-700">訂單編號</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-emerald-700">{pt('order_number', stationLang)}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {waterSectionCompletedByOrder.slice(0, 3).map((group) => (
                         <span
@@ -8890,7 +9275,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         </span>
                       )}
                       {waterSectionDoneOrderCount === 0 && (
-                        <span className="text-[11px] font-medium text-emerald-700">目前無完成紀錄</span>
+                        <span className="text-[11px] font-medium text-emerald-700">{pt('no_completed_records', stationLang)}</span>
                       )}
                     </div>
                   </div>
@@ -8914,11 +9299,11 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
                             <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${waterServiceModeBadgeClass(group.serviceMode)}`}>
-                              {waterServiceModeLabel(group.serviceMode)}
+                              {waterServiceModeLabel(group.serviceMode, stationLang)}
                             </span>
                             <p className="text-sm font-semibold text-slate-900">{group.orderId}</p>
                           </div>
-                          <p className="text-xs font-semibold text-emerald-700">完成 {group.tasks.length} 筆</p>
+                          <p className="text-xs font-semibold text-emerald-700">{ptf('completed_n_tasks', stationLang, { n: group.tasks.length })}</p>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           {group.tasks.map((task) => (
@@ -8941,8 +9326,8 @@ function AppShell({ userId, authUser }: AppShellProps) {
               <div className="grid gap-4 md:grid-cols-12">
                 <section className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 md:col-span-7">
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-lg font-bold text-blue-900">水餃訂單</h3>
-                    <p className="text-sm font-semibold text-blue-800">{waterDumplingOrderGroups.length} 張</p>
+                    <h3 className="text-lg font-bold text-blue-900">{pt('dumpling_orders', stationLang)}</h3>
+                    <p className="text-sm font-semibold text-blue-800">{ptf('n_sheets', stationLang, { n: waterDumplingOrderGroups.length })}</p>
                   </div>
                   <div className="mt-3 max-h-[56vh] space-y-3 overflow-y-auto pr-1 md:max-h-[72vh] xl:max-h-[760px] bafang-soft-scroll">
                     {waterDumplingOrderGroups.map((group) => (
@@ -8953,11 +9338,11 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${waterServiceModeBadgeClass(group.serviceMode)}`}>
-                              {waterServiceModeLabel(group.serviceMode)}
+                              {waterServiceModeLabel(group.serviceMode, stationLang)}
                             </span>
                             <p className="text-sm font-semibold text-slate-900">{group.orderId}</p>
                           </div>
-                          <p className="text-xs font-semibold text-blue-700">{group.tasks.length} 筆</p>
+                          <p className="text-xs font-semibold text-blue-700">{ptf('n_tasks_suffix', stationLang, { n: group.tasks.length })}</p>
                         </div>
                         <div className="mt-2 space-y-2">
                           {group.tasks.map((task) => {
@@ -8965,8 +9350,8 @@ function AppShell({ userId, authUser }: AppShellProps) {
                             const isQueued = timing.progress.status === 'queued';
                             const finishProgress = timing.progress.status === 'cooking' ? timing.progressRatio : 0;
                             const finishButtonLabel = timing.progress.status === 'cooking' && timing.remainingSeconds > 0
-                              ? `撈起 ${timing.remainingSeconds}s`
-                              : '撈起完成';
+                              ? ptf('scoop_countdown', stationLang, { n: timing.remainingSeconds })
+                              : pt('scoop_done', stationLang);
                             const showForceFinishConfirm =
                               waterForceFinishPromptTaskId === task.taskId &&
                               timing.progress.status === 'cooking' &&
@@ -8980,7 +9365,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                   <div className="min-w-0">
                                     <p className="text-sm font-semibold text-slate-900">{task.title}</p>
                                     <p className="mt-0.5 text-xs font-medium text-blue-700">
-                                      {task.flavorCounts.map((flavor) => `${flavor.name} ${flavor.count}顆`).join(' · ')}
+                                      {task.flavorCounts.map((flavor) => ptf('flavor_count', stationLang, { name: flavor.name, count: flavor.count })).join(' · ')}
                                     </p>
                                   </div>
                                   <p className="text-sm font-semibold text-blue-900">{task.quantity}{task.unitLabel}</p>
@@ -8996,7 +9381,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                     onClick={() => startWaterTask(task.taskId)}
                                     disabled={!isQueued}
                                   >
-                                    下鍋
+                                    {pt('drop_in_pan', stationLang)}
                                   </button>
                                   <button
                                     className={`${actionButtonBase} relative min-h-10 overflow-hidden ${
@@ -9024,7 +9409,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                       className={`${actionButtonBase} min-h-9 w-full border border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100`}
                                       onClick={() => completeWaterTask(task.taskId, true)}
                                     >
-                                      確認強制結束
+                                      {pt('confirm_force_end', stationLang)}
                                     </button>
                                   </div>
                                 </div>
@@ -9036,7 +9421,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                     ))}
                     {waterDumplingOrderGroups.length === 0 && (
                       <div className="rounded-xl border border-dashed border-blue-300 bg-blue-50 px-3 py-4 text-center text-sm font-medium text-blue-800">
-                        目前無水餃訂單
+                        {pt('no_dumpling_orders', stationLang)}
                       </div>
                     )}
                   </div>
@@ -9044,14 +9429,14 @@ function AppShell({ userId, authUser }: AppShellProps) {
 
                 <section className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 md:col-span-5">
                   <div className="flex items-start justify-between gap-3">
-                    <h3 className="text-lg font-bold text-blue-900">水餃抓取器</h3>
+                    <h3 className="text-lg font-bold text-blue-900">{pt('dumpling_grabber', stationLang)}</h3>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-xl border border-blue-200 bg-white px-3 py-2 text-center">
-                        <p className="text-[11px] font-semibold text-blue-700">待下鍋</p>
+                        <p className="text-[11px] font-semibold text-blue-700">{pt('waiting_pot', stationLang)}</p>
                         <p className="text-xl font-bold text-blue-900">{waterDumplingQueuedPieces}</p>
                       </div>
                       <div className="rounded-xl border border-sky-200 bg-white px-3 py-2 text-center">
-                        <p className="text-[11px] font-semibold text-sky-700">鍋中</p>
+                        <p className="text-[11px] font-semibold text-sky-700">{pt('in_pot', stationLang)}</p>
                         <p className="text-xl font-bold text-sky-900">{waterDumplingCookingPieces}</p>
                       </div>
                     </div>
@@ -9059,10 +9444,10 @@ function AppShell({ userId, authUser }: AppShellProps) {
 
                   <div className="mt-3 space-y-3">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-blue-900">批次抓取目標</p>
+                      <p className="text-sm font-semibold text-blue-900">{pt('batch_grab_target', stationLang)}</p>
                       <p className="text-2xl font-bold text-blue-900">
                         {waterDumplingTargetCount}
-                        <span className="ml-1 text-sm font-semibold text-blue-700">顆</span>
+                        <span className="ml-1 text-sm font-semibold text-blue-700">{pt('unit_pieces', stationLang)}</span>
                       </p>
                     </div>
                     <div className="px-1">
@@ -9091,7 +9476,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         onClick={captureWaterDumplingBatch}
                         disabled={waterEstimatedDumplingTaskCount === 0}
                       >
-                        抓取批次
+                        {pt('grab_batch', stationLang)}
                       </button>
                       <button
                         className={`${actionButtonBase} min-h-11 ${
@@ -9102,7 +9487,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         onClick={startCapturedWaterDumplingBatch}
                         disabled={waterCapturedDumplingTaskCount === 0}
                       >
-                        這批下鍋
+                        {pt('cook_this_batch', stationLang)}
                       </button>
                     </div>
 
@@ -9115,13 +9500,13 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         <p className={`text-sm font-semibold ${
                           isWaterBatchCaptured ? 'text-sky-800' : 'text-blue-800'
                         }`}>
-                          {isWaterBatchCaptured ? '已抓取批次' : '預估批次'}
+                          {isWaterBatchCaptured ? pt('captured_batch', stationLang) : pt('estimated_batch', stationLang)}
                         </p>
-                        <p className="text-lg font-bold text-slate-900">{waterBatchDisplayTotalCount} 顆</p>
+                        <p className="text-lg font-bold text-slate-900">{ptf('n_pieces_suffix', stationLang, { n: waterBatchDisplayTotalCount })}</p>
                       </div>
                       {!isWaterBatchCaptured && waterEstimatedDumplingBatch.overflowFallback && (
                         <p className="mt-2 text-xs font-semibold text-amber-700">
-                          目標低於最早任務顆數，已抓最早一筆。
+                          {pt('overflow_fallback', stationLang)}
                         </p>
                       )}
                       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -9131,11 +9516,11 @@ function AppShell({ userId, authUser }: AppShellProps) {
                             className="rounded-lg border border-blue-100 bg-blue-50/70 px-2.5 py-2"
                           >
                             <p className="text-xs font-semibold text-blue-800">{flavor.name}</p>
-                            <p className="mt-0.5 text-lg font-bold leading-none text-blue-900">{flavor.count}顆</p>
+                            <p className="mt-0.5 text-lg font-bold leading-none text-blue-900">{ptf('n_pieces_suffix', stationLang, { n: flavor.count })}</p>
                           </div>
                         ))}
                         {waterBatchDisplayFlavorSummary.length === 0 && (
-                          <p className="text-xs font-semibold text-blue-700">目前無可抓取水餃批次</p>
+                          <p className="text-xs font-semibold text-blue-700">{pt('no_grabbable_batches', stationLang)}</p>
                         )}
                       </div>
                     </div>
@@ -9149,15 +9534,15 @@ function AppShell({ userId, authUser }: AppShellProps) {
                 <section className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-4 md:col-span-7 xl:sticky xl:top-4 xl:self-start">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                     <div>
-                      <h3 className="text-base font-semibold text-cyan-900">麵杓</h3>
+                      <h3 className="text-base font-semibold text-cyan-900">{pt('ladle', stationLang)}</h3>
                       <p className="text-xs font-medium text-cyan-700">
-                        先點右側訂單，再點左側麵杓直接搬入。
+                        {pt('noodle_hint', stationLang)}
                       </p>
                     </div>
                     <div className="flex items-end gap-2">
                       <div>
                         <label className="text-[11px] font-semibold uppercase tracking-widest text-cyan-700">
-                          麵杓數量
+                          {pt('ladle_count', stationLang)}
                         </label>
                         <input
                           type="number"
@@ -9168,7 +9553,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         />
                       </div>
                       <p className="pb-1 text-xs font-semibold text-cyan-700">
-                        使用中 {waterLadleBusyCount}/{waterLadleCapacity} · 空閒 {waterLadleIdleCount}
+                        {ptf('used_idle', stationLang, { busy: waterLadleBusyCount, total: waterLadleCapacity, idle: waterLadleIdleCount })}
                       </p>
                     </div>
                   </div>
@@ -9176,7 +9561,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                     <p className={`text-xs font-semibold text-cyan-800 transition-all duration-300 ${
                       selectedWaterTransferLabel ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-1'
                     }`}>
-                      {selectedWaterTransferLabel ? `已選取：${selectedWaterTransferLabel}` : '已選取：無'}
+                      {selectedWaterTransferLabel ? ptf('selected_label', stationLang, { label: selectedWaterTransferLabel }) : pt('selected_none', stationLang)}
                     </p>
                   </div>
 
@@ -9186,8 +9571,8 @@ function AppShell({ userId, authUser }: AppShellProps) {
                       const slotTiming = slotTask ? getWaterTiming(slotTask) : null;
                       const slotFinishProgress = slotTiming?.progress.status === 'cooking' ? slotTiming.progressRatio : 0;
                       const slotFinishButtonLabel = slotTiming && slotTiming.progress.status === 'cooking' && slotTiming.remainingSeconds > 0
-                        ? `撈起 ${slotTiming.remainingSeconds}s`
-                        : '撈起完成';
+                        ? ptf('scoop_countdown', stationLang, { n: slotTiming.remainingSeconds })
+                        : pt('scoop_done', stationLang);
                       const isSlotAssignReady = selectedWaterTransferTaskId
                         ? canAssignWaterTaskToLadleSlot(selectedWaterTransferTaskId, slot)
                         : false;
@@ -9214,18 +9599,18 @@ function AppShell({ userId, authUser }: AppShellProps) {
                             <div className="pointer-events-none absolute inset-0 bafang-slot-accept rounded-2xl" />
                           )}
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-semibold text-cyan-800">麵杓 {slot}</p>
+                            <p className="text-sm font-semibold text-cyan-800">{ptf('ladle_n', stationLang, { n: slot })}</p>
                             <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                               slotTask
                                 ? 'border-sky-200 bg-sky-50 text-sky-700'
                                 : 'border-slate-300 bg-white text-slate-600'
                             }`}>
-                              {slotTask ? '煮製中' : '待命'}
+                              {slotTask ? pt('cooking', stationLang) : pt('standby', stationLang)}
                             </span>
                           </div>
                           {!slotTask && (
                             <p className="mt-3 text-sm font-medium text-cyan-700">
-                              {isSlotAssignReady ? '點一下放入此麵杓' : '先從右側選取訂單'}
+                              {isSlotAssignReady ? pt('tap_to_assign', stationLang) : pt('select_order_first', stationLang)}
                             </p>
                           )}
                           {slotTask && slotTiming && (
@@ -9237,7 +9622,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                               <p className="text-sm font-semibold text-slate-900">{slotTask.orderId} · {slotTask.title}</p>
                               <p className="mt-1 text-[11px] font-medium text-cyan-800">
                                 {slotTask.quantity}{slotTask.unitLabel}
-                                {slotTask.note ? ` · 備註：${slotTask.note}` : ''}
+                                {slotTask.note ? ` · ${ptf('note_prefix', stationLang, { note: slotTask.note })}` : ''}
                               </p>
                               <div className="mt-2 grid grid-cols-2 gap-2">
                                 <button
@@ -9248,7 +9633,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                   }`}
                                   onClick={() => toggleWaterTaskUnlock(slotTask.taskId)}
                                 >
-                                  {slotTaskUnlocked ? '鎖定' : '解鎖'}
+                                  {slotTaskUnlocked ? pt('lock', stationLang) : pt('unlock', stationLang)}
                                 </button>
                                 <button
                                   className={`${actionButtonBase} relative min-h-9 overflow-hidden ${
@@ -9278,7 +9663,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                   onClick={() => toggleWaterTransferSelection(slotTask.taskId)}
                                   disabled={!slotTaskUnlocked}
                                 >
-                                  {isSlotTaskSelected ? '已選取，請點目標麵杓' : '選取改派'}
+                                  {isSlotTaskSelected ? pt('selected_tap_ladle', stationLang) : pt('select_reassign', stationLang)}
                                 </button>
                               </div>
                               <div className={`grid transition-[grid-template-rows,opacity,margin] duration-300 ease-out ${
@@ -9291,7 +9676,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                     className={`${actionButtonBase} min-h-9 w-full border border-cyan-200 bg-cyan-100/70 text-cyan-900 hover:border-cyan-300 hover:bg-cyan-200/70`}
                                     onClick={() => moveWaterTaskBackToQueue(slotTask.taskId)}
                                   >
-                                    退回待處理
+                                    {pt('return_to_queue', stationLang)}
                                   </button>
                                 </div>
                               </div>
@@ -9305,7 +9690,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                     className={`${actionButtonBase} min-h-9 w-full border border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100`}
                                     onClick={() => completeWaterTask(slotTask.taskId, true)}
                                   >
-                                    確認強制結束
+                                    {pt('confirm_force_end', stationLang)}
                                   </button>
                                 </div>
                               </div>
@@ -9319,8 +9704,8 @@ function AppShell({ userId, authUser }: AppShellProps) {
 
                 <section className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-4 md:col-span-5">
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="text-lg font-bold text-cyan-900">麵台訂單</h3>
-                    <p className="text-sm font-semibold text-cyan-800">{waterNoodleOrderGroups.length} 張</p>
+                    <h3 className="text-lg font-bold text-cyan-900">{pt('noodle_orders', stationLang)}</h3>
+                    <p className="text-sm font-semibold text-cyan-800">{ptf('n_sheets', stationLang, { n: waterNoodleOrderGroups.length })}</p>
                   </div>
                   <div className="mt-3 max-h-[56vh] space-y-3 overflow-y-auto pr-1 md:max-h-[72vh] xl:max-h-[760px] bafang-soft-scroll">
                     {waterNoodleOrderGroups.map((group) => (
@@ -9331,11 +9716,11 @@ function AppShell({ userId, authUser }: AppShellProps) {
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${waterServiceModeBadgeClass(group.serviceMode)}`}>
-                              {waterServiceModeLabel(group.serviceMode)}
+                              {waterServiceModeLabel(group.serviceMode, stationLang)}
                             </span>
                             <p className="text-sm font-semibold text-slate-900">{group.orderId}</p>
                           </div>
-                          <p className="text-xs font-semibold text-cyan-700">{group.tasks.length} 筆</p>
+                          <p className="text-xs font-semibold text-cyan-700">{ptf('n_tasks_suffix', stationLang, { n: group.tasks.length })}</p>
                         </div>
                         <div className="mt-2 space-y-2">
                           {group.tasks.map((task) => {
@@ -9360,11 +9745,11 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                   <div className="min-w-0">
                                     <p className="text-sm font-semibold text-slate-900">{task.title}</p>
                                     {task.note && (
-                                      <p className="mt-0.5 text-xs font-semibold text-cyan-800">備註：{task.note}</p>
+                                      <p className="mt-0.5 text-xs font-semibold text-cyan-800">{ptf('note_prefix', stationLang, { note: task.note })}</p>
                                     )}
                                     <p className="mt-0.5 text-xs font-medium text-cyan-700">
                                       {waterTaskStatusLabel(timing.progress.status)}
-                                      {timing.progress.ladleSlot ? ` · 麵杓 ${timing.progress.ladleSlot}` : ''}
+                                      {timing.progress.ladleSlot ? ` · ${ptf('ladle_n', stationLang, { n: timing.progress.ladleSlot })}` : ''}
                                     </p>
                                   </div>
                                   <p className="text-sm font-semibold text-cyan-900">{task.quantity}{task.unitLabel}</p>
@@ -9372,7 +9757,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                                 <p className={`mt-2 text-xs font-semibold transition-all duration-300 ${
                                   isSelected ? 'text-cyan-900' : 'text-cyan-700'
                                 }`}>
-                                  {isSelected ? '已選取，請點左側麵杓' : '點一下選取後，再點左側麵杓'}
+                                  {isSelected ? pt('selected_tap_ladle', stationLang) : pt('tap_to_select', stationLang)}
                                 </p>
                               </button>
                             );
@@ -9382,7 +9767,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                     ))}
                     {waterNoodleOrderGroups.length === 0 && (
                       <div className="rounded-xl border border-dashed border-cyan-300 bg-cyan-50 px-3 py-4 text-center text-sm font-medium text-cyan-800">
-                        目前無麵台訂單
+                        {pt('no_noodle_orders', stationLang)}
                       </div>
                     )}
                   </div>
@@ -9962,6 +10347,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
     const settingsPanelTabs: Array<{ id: SettingsPanel; label: string }> = [
       { id: 'stations', label: '工作站' },
       { id: 'menu', label: '菜單' },
+      ...(featureFlags.apiHub ? [{ id: 'apiHub' as SettingsPanel, label: 'API 庫' }] : []),
     ];
     const settingsPanelIndex = Math.max(
       0,
@@ -10305,7 +10691,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
                   <div className={`pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-slate-100/85 via-slate-100/50 to-transparent transition-[opacity,transform] duration-500 ease-out ${
                     settingsPanelIndex === settingsPanelTabs.length - 1 ? 'opacity-0 translate-x-1' : 'opacity-100 translate-x-0'
                   }`} />
-                  <div className="relative grid grid-cols-2">
+                  <div className={`relative grid ${settingsPanelTabs.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                     {settingsPanelTabs.map((tab) => (
                       <button
                         key={`settings-panel-${tab.id}`}
@@ -10879,6 +11265,245 @@ function AppShell({ userId, authUser }: AppShellProps) {
             </section>
           </section>
         )}
+
+        {settingsPanel === 'apiHub' && (
+          <section className="space-y-4 bafang-enter">
+            {/* --- 硬體模組開關 --- */}
+            <section className={`${cardClass} space-y-4`}>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">硬體模組</h3>
+                <p className="mt-0.5 text-xs text-slate-500">啟用或停用硬體整合模組，停用後對應的 API 端點會從下方目錄隱藏</p>
+              </div>
+              <div className="space-y-2">
+                {HW_MODULE_REGISTRY.map((mod) => (
+                  <label key={mod.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-slate-800">{mod.label}</span>
+                      <span className="block text-xs text-slate-500">{mod.description}</span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={hwModules[mod.id]}
+                      onClick={() => toggleHwModule(mod.id)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors ${hwModules[mod.id] ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                    >
+                      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${hwModules[mod.id] ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            {/* --- 入站 API 端點目錄 --- */}
+            <section className={`${cardClass} space-y-4`}>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">入站 API 端點</h3>
+                <p className="mt-0.5 text-xs text-slate-500">外部硬體呼叫本系統的 API 端點（依啟用的模組顯示）</p>
+              </div>
+              {HW_MODULE_REGISTRY.filter((mod) => hwModules[mod.id]).flatMap((mod) => mod.apis).length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 px-4 py-10 text-center">
+                  <p className="text-sm text-slate-500">尚未啟用任何硬體模組</p>
+                  <p className="mt-1 text-xs text-slate-400">請在上方開啟模組以顯示對應的 API 端點</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {HW_MODULE_REGISTRY.filter((mod) => hwModules[mod.id]).flatMap((mod) =>
+                    mod.apis.map((api) => {
+                      const resolvedPath = api.pathTemplate.replace(':storeId', authUser.storeId);
+                      const fullUrl = `${window.location.origin}${resolvedPath}`;
+                      return (
+                        <div key={api.pathTemplate} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                          <span className="shrink-0 rounded bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-700">{api.method}</span>
+                          <div className="min-w-0 flex-1">
+                            <code className="block truncate text-xs text-slate-700">{fullUrl}</code>
+                            <span className="block text-xs text-slate-500">{api.description}</span>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">{mod.label}</span>
+                          <button
+                            type="button"
+                            onClick={() => { navigator.clipboard.writeText(fullUrl); }}
+                            className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            複製
+                          </button>
+                        </div>
+                      );
+                    }),
+                  )}
+                </div>
+              )}
+            </section>
+
+            {/* --- 硬體設備 API 連線（既有區段） --- */}
+            <section className={`${cardClass} space-y-4`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">硬體設備 API 連線</h3>
+                  <p className="mt-0.5 text-xs text-slate-500">管理店內硬體設備（出單機、標籤機、電子秤、叫號螢幕等）的 API 端點與認證設定</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addApiHubDevice}
+                  className={`${actionButtonBase} min-h-10 bg-[#1f3356] px-4 text-white hover:bg-[#2d4770]`}
+                >
+                  新增裝置
+                </button>
+              </div>
+
+              {apiHubDevices.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 px-4 py-10 text-center">
+                  <p className="text-sm text-slate-500">尚未新增任何裝置</p>
+                  <p className="mt-1 text-xs text-slate-400">點擊「新增裝置」開始設定硬體 API 連線</p>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {apiHubDevices.map((device) => {
+                  const isExpanded = apiHubExpandedId === device.id;
+                  const isTesting = apiHubTestingId === device.id;
+                  const statusColor = device.lastTestStatus === 'ok' ? 'bg-emerald-400' : device.lastTestStatus === 'error' ? 'bg-red-400' : 'bg-slate-300';
+                  return (
+                    <div key={device.id} className="rounded-2xl border border-slate-200 bg-white transition-shadow hover:shadow-sm">
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                        onClick={() => setApiHubExpandedId(isExpanded ? null : device.id)}
+                      >
+                        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${statusColor}`} />
+                        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">
+                          {device.name || '（未命名裝置）'}
+                        </span>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          {DEVICE_TYPE_LABEL[device.deviceType]}
+                        </span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${device.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                          {device.enabled ? '啟用' : '停用'}
+                        </span>
+                        <svg className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="space-y-4 border-t border-slate-100 px-4 py-4">
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="block">
+                              <span className="mb-1 block text-xs font-semibold text-slate-600">裝置名稱</span>
+                              <input
+                                type="text"
+                                value={device.name}
+                                onChange={(e) => updateApiHubDevice(device.id, { name: e.target.value })}
+                                placeholder="例：前台出單機"
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-500"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="mb-1 block text-xs font-semibold text-slate-600">裝置類型</span>
+                              <select
+                                value={device.deviceType}
+                                onChange={(e) => updateApiHubDevice(device.id, { deviceType: e.target.value as HardwareDeviceType })}
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-500"
+                              >
+                                {DEVICE_TYPE_OPTIONS.map((dt) => (
+                                  <option key={dt} value={dt}>{DEVICE_TYPE_LABEL[dt]}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-semibold text-slate-600">Endpoint URL</span>
+                            <input
+                              type="url"
+                              value={device.endpointUrl}
+                              onChange={(e) => updateApiHubDevice(device.id, { endpointUrl: e.target.value })}
+                              placeholder="https://192.168.1.100:8080/api"
+                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-500"
+                            />
+                          </label>
+
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="block">
+                              <span className="mb-1 block text-xs font-semibold text-slate-600">認證方式</span>
+                              <select
+                                value={device.authMethod}
+                                onChange={(e) => updateApiHubDevice(device.id, { authMethod: e.target.value as DeviceAuthMethod })}
+                                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-500"
+                              >
+                                {(['none', 'api_key', 'bearer_token'] as DeviceAuthMethod[]).map((m) => (
+                                  <option key={m} value={m}>{AUTH_METHOD_LABEL[m]}</option>
+                                ))}
+                              </select>
+                            </label>
+                            {device.authMethod !== 'none' && (
+                              <label className="block">
+                                <span className="mb-1 block text-xs font-semibold text-slate-600">
+                                  {device.authMethod === 'api_key' ? 'API Key' : 'Bearer Token'}
+                                </span>
+                                <input
+                                  type="password"
+                                  value={device.authSecret}
+                                  onChange={(e) => updateApiHubDevice(device.id, { authSecret: e.target.value })}
+                                  placeholder="輸入密鑰…"
+                                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-500"
+                                />
+                              </label>
+                            )}
+                          </div>
+
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={device.enabled}
+                              onChange={(e) => updateApiHubDevice(device.id, { enabled: e.target.checked })}
+                              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span className="text-sm font-semibold text-slate-700">啟用此裝置</span>
+                          </label>
+
+                          <label className="block">
+                            <span className="mb-1 block text-xs font-semibold text-slate-600">備註</span>
+                            <textarea
+                              value={device.note}
+                              onChange={(e) => updateApiHubDevice(device.id, { note: e.target.value })}
+                              rows={2}
+                              placeholder="選填備註…"
+                              className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-500"
+                            />
+                          </label>
+
+                          {device.lastTestAt !== null && (
+                            <p className={`text-xs font-semibold ${device.lastTestStatus === 'ok' ? 'text-emerald-600' : 'text-red-500'}`}>
+                              上次測試：{device.lastTestStatus === 'ok' ? '連線成功' : '連線失敗'}
+                              （{new Date(device.lastTestAt).toLocaleTimeString('zh-TW')}）
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-3 pt-1">
+                            <button
+                              type="button"
+                              disabled={!device.endpointUrl || isTesting}
+                              onClick={() => testApiHubDevice(device.id)}
+                              className={`${actionButtonBase} min-h-10 bg-emerald-600 px-4 text-white hover:bg-emerald-700 disabled:opacity-50`}
+                            >
+                              {isTesting ? '測試中…' : '測試連線'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeApiHubDevice(device.id)}
+                              className={`${actionButtonBase} min-h-10 border border-red-300 bg-white px-4 text-red-600 hover:border-red-400 hover:bg-red-50`}
+                            >
+                              刪除裝置
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </section>
+        )}
       </section>
     );
   };
@@ -10900,7 +11525,7 @@ function AppShell({ userId, authUser }: AppShellProps) {
     { id: 'production', label: '製作' },
     { id: 'packaging', label: '包裝' },
     { id: 'settings', label: '設定' },
-    { id: 'ingest', label: '進單引擎' },
+    ...(featureFlags.ingestEngine ? [{ id: 'ingest' as AppPerspective, label: '進單引擎' }] : []),
   ];
   const perspectiveTabs = perspectiveTabsAll.filter(
     (tab) => isPerspectiveAllowed(tab.id),

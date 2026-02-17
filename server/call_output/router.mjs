@@ -18,14 +18,14 @@ const toPositiveInt = (value, fallback = 0) => {
 export const createCallOutputRouter = ({ service }) => {
   const router = express.Router();
 
-  router.get('/status', (_req, res) => {
+  const handleStatus = (_req, res) => {
     res.status(200).json({
       ok: true,
       status: service.getStatus(),
     });
-  });
+  };
 
-  router.post('/enqueue', (req, res) => {
+  const handleEnqueue = (req, res) => {
     const body = isObject(req.body) ? req.body : {};
     const payload = Array.isArray(body.calls) ? body.calls : body;
     const created = service.enqueue(payload);
@@ -34,9 +34,9 @@ export const createCallOutputRouter = ({ service }) => {
       created_count: created.length,
       calls: created,
     });
-  });
+  };
 
-  router.post('/next', (req, res) => {
+  const handleNext = (req, res) => {
     const body = isObject(req.body) ? req.body : {};
     const call = service.next({
       channel: body.channel ?? req.query?.channel,
@@ -46,9 +46,9 @@ export const createCallOutputRouter = ({ service }) => {
       ok: true,
       call,
     });
-  });
+  };
 
-  router.post('/ack', (req, res) => {
+  const handleAck = (req, res) => {
     const body = isObject(req.body) ? req.body : {};
     const call = service.ack({
       id: body.id,
@@ -63,9 +63,9 @@ export const createCallOutputRouter = ({ service }) => {
       ok: true,
       call,
     });
-  });
+  };
 
-  router.get('/queue', (req, res) => {
+  const handleQueue = (req, res) => {
     const list = service.listQueue({
       channel: req.query?.channel,
       status: req.query?.status,
@@ -75,8 +75,36 @@ export const createCallOutputRouter = ({ service }) => {
       total: list.length,
       items: list,
     });
-  });
+  };
 
+  const handleLegacyDisplay = (req, res) => {
+    const limit = toPositiveInt(req.query?.limit, 6);
+    const channel = normalizeText(req.query?.channel, 'outer');
+    const numbers = service.buildLegacyDisplayNumbers({ channel, limit });
+    res.status(200).json({
+      ok: true,
+      channel,
+      numbers,
+    });
+  };
+
+  // Global routes (original)
+  router.get('/status', handleStatus);
+  router.post('/enqueue', handleEnqueue);
+  router.post('/next', handleNext);
+  router.post('/ack', handleAck);
+  router.get('/queue', handleQueue);
+  router.get('/legacy/display', handleLegacyDisplay);
+
+  // Store-scoped routes
+  router.get('/stores/:storeId/status', handleStatus);
+  router.post('/stores/:storeId/enqueue', handleEnqueue);
+  router.post('/stores/:storeId/next', handleNext);
+  router.post('/stores/:storeId/ack', handleAck);
+  router.get('/stores/:storeId/queue', handleQueue);
+  router.get('/stores/:storeId/legacy/display', handleLegacyDisplay);
+
+  // Management routes (global only)
   router.get('/history', (req, res) => {
     const limit = toPositiveInt(req.query?.limit, 80);
     res.status(200).json({
@@ -109,17 +137,6 @@ export const createCallOutputRouter = ({ service }) => {
     res.status(200).json({
       ok: true,
       status: service.getStatus(),
-    });
-  });
-
-  router.get('/legacy/display', (req, res) => {
-    const limit = toPositiveInt(req.query?.limit, 6);
-    const channel = normalizeText(req.query?.channel, 'outer');
-    const numbers = service.buildLegacyDisplayNumbers({ channel, limit });
-    res.status(200).json({
-      ok: true,
-      channel,
-      numbers,
     });
   });
 

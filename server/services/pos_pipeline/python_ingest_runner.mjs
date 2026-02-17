@@ -74,7 +74,7 @@ export const getPythonLlmRuntime = (llmConfig = null) => {
   if (enabledFlag === false) {
     enabled = false;
     reason = 'env_disabled';
-  } else if (provider !== 'openai') {
+  } else if (provider !== 'openai' && provider !== 'anthropic') {
     enabled = false;
     reason = 'unsupported_provider';
   } else if (!hasApiKey) {

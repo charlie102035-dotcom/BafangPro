@@ -351,14 +351,9 @@ def _merge_one_item(
             )
         )
     mods: list[Mod] = []
-    rejected_mods: list[str] = []
     for raw_mod in raw_mods:
         normalized_mod = _normalize_mod(raw_mod, default_confidence=confidence_mods)
         if normalized_mod is None:
-            needs_review = True
-            continue
-        if allowed_mods_set is not None and normalized_mod.mod_raw not in allowed_mods_set:
-            rejected_mods.append(normalized_mod.mod_raw)
             needs_review = True
             continue
         mod_conf = normalized_mod.confidence
@@ -372,15 +367,6 @@ def _merge_one_item(
                 needs_review=normalized_mod.needs_review or mod_conf_low,
                 metadata=dict(normalized_mod.metadata),
                 version=normalized_mod.version,
-            )
-        )
-    if rejected_mods:
-        audit_events.append(
-            _audit(
-                "mods_not_allowed",
-                "Some mods were removed because they are outside allowed_mods",
-                line_index=line.line_index,
-                metadata={"rejected_mods": rejected_mods},
             )
         )
 
@@ -651,11 +637,22 @@ def merge_and_validate(
             },
             "validation_rules": {
                 "group_membership_rule": "single_group_per_line_first_wins",
-                "mods_filter_mode": "allowlist",
+                "mods_filter_mode": "open",
             },
             "dispatch_decision": dispatch_decision,
         }
     )
+
+    confidence_values: list[float] = []
+    for item in items:
+        if item.confidence_item is not None:
+            confidence_values.append(item.confidence_item)
+        if item.confidence_mods is not None:
+            confidence_values.append(item.confidence_mods)
+    for group in groups:
+        if group.confidence_group is not None:
+            confidence_values.append(group.confidence_group)
+    order_confidence = min(confidence_values) if confidence_values else None
 
     return OrderNormalized(
         source_text=order_raw.source_text,
@@ -665,6 +662,7 @@ def merge_and_validate(
         lines=copied_lines,
         audit_events=audit_events,
         overall_needs_review=overall_needs_review,
+        order_confidence=order_confidence,
         metadata=merged_metadata,
         version=CONTRACT_VERSION,
     )

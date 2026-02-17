@@ -159,6 +159,81 @@ class OpenAIChatJsonClient:
         raise RuntimeError("OpenAI response missing content text")
 
 
+@dataclass(slots=True)
+class AnthropicChatJsonClient:
+    api_key: str
+    model: str
+    base_url: str = "https://api.anthropic.com"
+    temperature: float = 0.0
+    max_tokens: int = 900
+
+    def complete(self, prompt: str, timeout_s: float | None = None) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        endpoint = f"{self.base_url.rstrip('/')}/v1/messages"
+        request = urllib.request.Request(
+            endpoint,
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+            },
+        )
+        timeout_value = _as_float(timeout_s, 15.0) if timeout_s is not None else 15.0
+        ssl_context = _build_ssl_context()
+
+        try:
+            with urllib.request.urlopen(request, timeout=timeout_value, context=ssl_context) as response:
+                raw = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            try:
+                error_payload = json.loads(exc.read().decode("utf-8"))
+            except Exception:  # pragma: no cover - best-effort diagnostics
+                error_payload = None
+            message = "anthropic chat completion failed"
+            if isinstance(error_payload, Mapping):
+                error_obj = error_payload.get("error")
+                if isinstance(error_obj, Mapping):
+                    detail = _as_text(error_obj.get("message"))
+                    if detail:
+                        message = detail
+            raise RuntimeError(f"Anthropic HTTP {exc.code}: {message}") from exc
+        except urllib.error.URLError as exc:
+            reason = exc.reason if hasattr(exc, "reason") else exc
+            if isinstance(reason, Exception) and _is_timeout_exception(reason):
+                raise TimeoutError("Anthropic request timeout") from exc
+            if _is_timeout_exception(exc):
+                raise TimeoutError("Anthropic request timeout") from exc
+            raise RuntimeError(f"Anthropic request failed: {exc}") from exc
+        except Exception as exc:
+            if _is_timeout_exception(exc):
+                raise TimeoutError("Anthropic request timeout") from exc
+            raise RuntimeError(f"Anthropic request failed: {exc}") from exc
+
+        parsed = json.loads(raw)
+        if not isinstance(parsed, Mapping):
+            raise RuntimeError("Anthropic response must be a JSON object")
+        content = parsed.get("content")
+        if not isinstance(content, list) or not content:
+            raise RuntimeError("Anthropic response missing content")
+        chunks: list[str] = []
+        for block in content:
+            if isinstance(block, Mapping) and block.get("type") == "text":
+                text = block.get("text")
+                if isinstance(text, str) and text.strip():
+                    chunks.append(text.strip())
+        if chunks:
+            return "\n".join(chunks)
+        raise RuntimeError("Anthropic response missing text content")
+
+
 def build_llm_client_from_env(
     env: Mapping[str, str] | None = None,
 ) -> tuple[Any | None, dict[str, Any]]:
@@ -185,7 +260,7 @@ def build_llm_client_from_env(
         runtime["reason"] = "env_disabled"
         return None, runtime
 
-    if provider != "openai":
+    if provider not in ("openai", "anthropic"):
         runtime["reason"] = "unsupported_provider"
         return None, runtime
 
@@ -193,16 +268,26 @@ def build_llm_client_from_env(
         runtime["reason"] = "missing_api_key"
         return None, runtime
 
-    client = OpenAIChatJsonClient(
-        api_key=api_key,
-        model=model,
-        base_url=base_url,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    if provider == "anthropic":
+        anthropic_base = _as_text(env_map.get("POS_LLM_BASE_URL"), "https://api.anthropic.com")
+        client: Any = AnthropicChatJsonClient(
+            api_key=api_key,
+            model=model,
+            base_url=anthropic_base,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    else:
+        client = OpenAIChatJsonClient(
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
     runtime["enabled"] = True
     runtime["reason"] = "ready"
     return client, runtime
 
 
-__all__ = ["OpenAIChatJsonClient", "build_llm_client_from_env"]
+__all__ = ["AnthropicChatJsonClient", "OpenAIChatJsonClient", "build_llm_client_from_env"]

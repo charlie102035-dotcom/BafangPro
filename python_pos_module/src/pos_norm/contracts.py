@@ -124,6 +124,7 @@ class OrderNormalized:
     lines: list[RawLine] = field(default_factory=list)
     audit_events: list[AuditEvent] = field(default_factory=list)
     overall_needs_review: bool = False
+    order_confidence: float | None = None
     metadata: Metadata = field(default_factory=dict)
     version: str = CONTRACT_VERSION
 

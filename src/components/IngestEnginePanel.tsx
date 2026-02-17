@@ -53,6 +53,7 @@ type PendingOrderView = {
   lines: PendingLine[];
   detail: ReviewOrderDetail;
   llmUsed: boolean;
+  orderConfidence: number | null;
 };
 
 type ActionKind = 'editing' | 'accepting' | 'rejecting';
@@ -191,6 +192,11 @@ const buildPendingOrderView = (
   const sourceText = asText(order.source_text, detail.sourceText);
   const fallbackSourceText = sourceText || lineViews.map((line) => line.rawLine).join('\n');
 
+  const orderConfidenceRaw = asNumber(order.order_confidence);
+  const orderConfidence = orderConfidenceRaw !== null && orderConfidenceRaw >= 0 && orderConfidenceRaw <= 1
+    ? orderConfidenceRaw
+    : null;
+
   return {
     orderId: detail.orderId,
     sourceText: fallbackSourceText,
@@ -198,6 +204,7 @@ const buildPendingOrderView = (
     lines: lineViews,
     detail,
     llmUsed,
+    orderConfidence,
   };
 };
 
@@ -778,6 +785,11 @@ function IngestEnginePanel({
                       {hasSoldOut && (
                         <span className="inline-flex h-6 items-center rounded-full border border-rose-300 bg-rose-100 px-2 text-[11px] font-semibold text-rose-800">
                           含售完品項
+                        </span>
+                      )}
+                      {order.orderConfidence !== null && (
+                        <span className="inline-flex h-6 items-center rounded-full border border-slate-300 bg-slate-100 px-2 text-[11px] font-semibold text-slate-700">
+                          訂單信心 {order.orderConfidence.toFixed(2)}
                         </span>
                       )}
                     </div>

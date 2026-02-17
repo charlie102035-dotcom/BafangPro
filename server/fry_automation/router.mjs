@@ -15,7 +15,7 @@ const writeSseEvent = (res, event) => {
 export const createFryAutomationRouter = ({ service }) => {
   const router = express.Router();
 
-  router.get('/sensors/status', async (req, res, next) => {
+  const handleSensorsStatus = async (req, res, next) => {
     try {
       const shouldRefresh = req.query?.refresh === '1';
       const status = shouldRefresh || !service.getLatestStatus()
@@ -42,9 +42,9 @@ export const createFryAutomationRouter = ({ service }) => {
     } catch (error) {
       next(error);
     }
-  });
+  };
 
-  router.post('/sensors/temperature', async (req, res, next) => {
+  const handleTemperature = async (req, res, next) => {
     try {
       const payload = req.body ?? {};
       const status = await service.ingestTemperatureReading(payload);
@@ -55,9 +55,9 @@ export const createFryAutomationRouter = ({ service }) => {
     } catch (error) {
       next(error);
     }
-  });
+  };
 
-  router.post('/sensors/temperature/batch', async (req, res, next) => {
+  const handleTemperatureBatch = async (req, res, next) => {
     try {
       const body = req.body ?? {};
       const readings = Array.isArray(body.readings) ? body.readings : [];
@@ -70,9 +70,9 @@ export const createFryAutomationRouter = ({ service }) => {
     } catch (error) {
       next(error);
     }
-  });
+  };
 
-  router.post('/sensors/target', async (req, res, next) => {
+  const handleTarget = async (req, res, next) => {
     try {
       const result = await service.setTargetTemperature(req.body ?? {});
       res.status(200).json({
@@ -83,9 +83,9 @@ export const createFryAutomationRouter = ({ service }) => {
     } catch (error) {
       next(error);
     }
-  });
+  };
 
-  router.get('/events/stream', async (req, res, next) => {
+  const handleEventsStream = async (req, res, next) => {
     try {
       if (!service.getLatestStatus()) {
         await service.refresh('stream_bootstrap');
@@ -122,7 +122,21 @@ export const createFryAutomationRouter = ({ service }) => {
     } catch (error) {
       next(error);
     }
-  });
+  };
+
+  // Global routes (original)
+  router.get('/sensors/status', handleSensorsStatus);
+  router.post('/sensors/temperature', handleTemperature);
+  router.post('/sensors/temperature/batch', handleTemperatureBatch);
+  router.post('/sensors/target', handleTarget);
+  router.get('/events/stream', handleEventsStream);
+
+  // Store-scoped routes (same handlers)
+  router.get('/stores/:storeId/sensors/status', handleSensorsStatus);
+  router.post('/stores/:storeId/sensors/temperature', handleTemperature);
+  router.post('/stores/:storeId/sensors/temperature/batch', handleTemperatureBatch);
+  router.post('/stores/:storeId/sensors/target', handleTarget);
+  router.get('/stores/:storeId/events/stream', handleEventsStream);
 
   return router;
 };

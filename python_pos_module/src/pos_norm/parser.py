@@ -209,6 +209,20 @@ def _parse_line(raw_line: str, line_index: int, warnings: list[str]) -> RawLine:
     )
 
 
+_STANDALONE_NOTE_RE = re.compile(
+    r"^\s*(?:備註|註記|附註|备注)\s*(?::\s*|\s+)(.+)$", re.IGNORECASE
+)
+
+
+def _is_standalone_note(raw_line: str) -> str | None:
+    """Return the note text if the line is a standalone note (e.g. '備註:分裝'), else None."""
+    normalized = _normalize_for_parse(raw_line)
+    matched = _STANDALONE_NOTE_RE.match(normalized)
+    if matched:
+        return matched.group(1).strip() or None
+    return None
+
+
 def parse_receipt_text(text: str) -> OrderRawParsed:
     parse_warnings: list[str] = []
     parse_errors: list[str] = []
@@ -219,6 +233,27 @@ def parse_receipt_text(text: str) -> OrderRawParsed:
         normalized = _normalize_for_parse(raw_line)
         if not normalized or _is_noise_line(normalized):
             continue
+
+        standalone_note = _is_standalone_note(raw_line)
+        if standalone_note:
+            if lines:
+                prev = lines[-1]
+                existing = prev.note_raw
+                merged = f"{existing}; {standalone_note}" if existing else standalone_note
+                lines[-1] = RawLine(
+                    line_index=prev.line_index,
+                    raw_line=prev.raw_line,
+                    name_raw=prev.name_raw,
+                    qty=prev.qty,
+                    note_raw=merged,
+                    needs_review=prev.needs_review,
+                    metadata=dict(prev.metadata),
+                    version=prev.version,
+                )
+            else:
+                parse_warnings.append(f"line {index}: standalone note with no preceding item")
+            continue
+
         try:
             parsed = _parse_line(raw_line=raw_line, line_index=index, warnings=parse_warnings)
             lines.append(parsed)

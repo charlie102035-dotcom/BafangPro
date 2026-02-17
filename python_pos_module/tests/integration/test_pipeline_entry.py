@@ -85,7 +85,7 @@ def test_ingest_receipt_uses_injected_llm_client_when_provided() -> None:
 
         def complete(self, prompt: str, timeout_s: float | None = None) -> str:
             self.calls += 1
-            assert "allowed_mods" in prompt
+            assert "加辣" in prompt
             return json.dumps(
                 {
                     "items": [

@@ -459,7 +459,7 @@ def _sanitize_llm_items(
     *,
     audit_events: list[AuditEvent],
 ) -> list[NormalizedItem]:
-    allowed_set = {mod for mod in allowed_mods}
+    reference_set = {mod for mod in allowed_mods}
     by_line: dict[int, Mapping[str, Any]] = {}
     if llm_items is not None and not isinstance(llm_items, list):
         audit_events.append(
@@ -549,39 +549,30 @@ def _sanitize_llm_items(
         requested_mods = _extract_mod_tokens(raw_mods)
         if not requested_mods:
             requested_mods = _rule_mods_from_line(line_text=line_text, allowed_mods=allowed_mods)
-        filtered: list[str] = []
-        rejected: list[str] = []
-        for token in requested_mods:
-            if token in allowed_set and token not in filtered:
-                filtered.append(token)
-            elif token not in allowed_set:
-                rejected.append(token)
-        if rejected:
+        filtered = _unique_tokens(requested_mods)
+        beyond_reference = [token for token in filtered if token not in reference_set]
+        if beyond_reference:
             audit_events.append(
                 _audit(
-                    "mods_out_of_allowed",
-                    "LLM returned mod outside allowed_mods",
+                    "mods_beyond_reference",
+                    "LLM returned mods beyond reference list (accepted)",
                     line_index=line.line_index,
-                    metadata={"rejected_mods": rejected},
-                    tags=["policy_violation", "review_queue"],
+                    metadata={"beyond_reference_mods": beyond_reference},
                 )
             )
-            line_reasons.append("mods_out_of_scope")
-            line_tags.append("mods_out_of_scope")
         confidence_mods = _safe_confidence(line_output.get("confidence_mods"), default=0.65)
         mods = [
             Mod(
                 mod_raw=token,
                 mod_name=token,
                 confidence=confidence_mods,
-                needs_review=bool(rejected),
+                needs_review=False,
             )
             for token in filtered
         ]
         line_needs_review = (
             line.needs_review
             or invalid_item_id
-            or bool(rejected)
             or _safe_bool(line_output.get("needs_review"), default=False)
             or selected_candidate is None
             or missing_line_output
